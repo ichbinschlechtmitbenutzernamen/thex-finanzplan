@@ -74,12 +74,25 @@ export interface Params {
 
 export interface Stundensatz {
   aktiv: boolean; jahr: 1 | 2 | 3; arbeitstage: number; urlaub: number; krankheit: number; feiertage: number;
-  stundenTag: number; unproduktiv: number; ausfall: number; gewinnaufschlag: number;
+  stundenTag: number; unproduktiv: number;
+  /** Auslastungsquote: Anteil der produktiven Stunden, der tatsächlich verkauft und bezahlt wird (0..1) */
+  auslastung: number;
+  gewinnaufschlag: number;
+  /** geplanter Stundensatz netto (Vergleichswert) */
+  geplant: number;
+  /** IDs der Geschäftsfelder, die nach Stunden abgerechnet werden (leer = alle) */
+  stundenFelder: string[];
 }
 
 export interface Plan {
   schemaVersion: number;
-  meta: { tutorialGesehen: boolean; haftungBestaetigt: boolean; erledigt: Record<string, boolean>; pruefer: boolean; geaendert: string };
+  meta: {
+    tutorialGesehen: boolean; haftungBestaetigt: boolean; erledigt: Record<string, boolean>; pruefer: boolean; geaendert: string;
+    /** „Bitte prüfen“: je abgeschlossenem Schritt die Fingerabdrücke der vorgelagerten Eingaben zum Zeitpunkt der Bestätigung */
+    stand: Record<string, Record<string, string>>;
+    /** Zeitpunkt der letzten Bestätigung des Ergebnisses (ISO) */
+    bestaetigtAm: string;
+  };
   einstellungen: { rechtsform: Rechtsform; kleinunternehmer: boolean; folgedarlehen: boolean; mehrgruender: boolean };
   projekt: { name: string; vorhaben: string; anschrift: string; telefon: string; email: string; branche: string; gemeinde: string; gruendungsmonat: string /* YYYY-MM */ };
   gruender: Gruender[];

@@ -79,7 +79,7 @@ function naechsterMonat(): string {
 export function leererPlan(): Plan {
   return {
     schemaVersion: SCHEMA_VERSION,
-    meta: { tutorialGesehen: false, haftungBestaetigt: false, erledigt: {}, pruefer: false, geaendert: new Date().toISOString() },
+    meta: { tutorialGesehen: false, haftungBestaetigt: false, erledigt: {}, pruefer: false, geaendert: new Date().toISOString(), stand: {}, bestaetigtAm: '' },
     einstellungen: { rechtsform: 'EU', kleinunternehmer: false, folgedarlehen: false, mehrgruender: false },
     projekt: { name: '', vorhaben: '', anschrift: '', telefon: '', email: '', branche: '', gemeinde: '', gruendungsmonat: naechsterMonat() },
     gruender: [neuerGruender()],
@@ -93,7 +93,7 @@ export function leererPlan(): Plan {
     eigenmittel: { bar: 0, barMonat: 1, privatdarlehen: 0, privatdarlehenMonat: 1, sachzuschuss: 0, sachzuschussMonat: 1, sacheinlage: 0 },
     liquiditaet: { kaution: 0, kautionMonat: 1, ustModus: 'folgemonat' },
     params: { ...PARAMS_2026 },
-    stundensatz: { aktiv: false, jahr: 1, arbeitstage: 260, urlaub: 24, krankheit: 5, feiertage: 10, stundenTag: 8, unproduktiv: 2, ausfall: 0.05, gewinnaufschlag: 3000 },
+    stundensatz: { aktiv: false, jahr: 1, arbeitstage: 260, urlaub: 24, krankheit: 5, feiertage: 10, stundenTag: 8, unproduktiv: 2, auslastung: 0.8, gewinnaufschlag: 3000, geplant: 0, stundenFelder: [] },
     sollIst: { monate: 12, ist: {} },
     pruefung: { vermerk: '', datum: '', pruefer: '', status: 'offen' },
   };

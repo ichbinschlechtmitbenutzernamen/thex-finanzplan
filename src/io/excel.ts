@@ -2,9 +2,11 @@ import ExcelJS from 'exceljs';
 import type { Plan } from '../model/types';
 import { berechne, jahr, sum, kontoAnalyse, privatKostenMonat, stundensatz, sollIstZeilen, type Ergebnis } from '../calc/plan';
 import { getPath, setPath, migriere } from './storage';
+import { ergebnisStatus } from '../model/schritte';
 
 export const FORMAT_ID = 'THEX-FINANZPLAN';
-export const APP_VERSION = '1.0.0';
+import { APP_VERSION } from '../version';
+export { APP_VERSION };
 
 type Typ = 'n' | 's' | 'b' | 'e';
 interface MapZeile { sheet: string; addr: string; path: string; typ: Typ; label: string }
@@ -101,9 +103,13 @@ export async function exportiere(plan: Plan): Promise<{ blob: Blob; dateiname: s
   amp.value = kd.ampel === 'gruen' ? 'KD GEGEBEN' : kd.ampel === 'gelb' ? 'KD GEGEBEN (KNAPP)' : 'KD NICHT GEGEBEN';
   amp.font = { bold: true, size: 14, color: { argb: 'FFFFFFFF' } }; amp.alignment = { horizontal: 'center', vertical: 'middle' };
   amp.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: kd.ampel === 'gruen' ? 'FF2E7D32' : kd.ampel === 'gelb' ? 'FFF9A825' : 'FFC62828' } };
+  const est = ergebnisStatus(plan);
+  const stc = d.getCell(13, 6); d.mergeCells(13, 6, 13, 7);
+  stc.value = est.fehler.length ? `NICHT EINREICHUNGSFÄHIG · Ergebnis ${est.text}` : `Ergebnis ${est.text}`; stc.font = { bold: true, color: { argb: est.fehler.length ? 'FFC62828' : est.status === 'bestaetigt' ? 'FF2E7D32' : 'FF8A5300' } };
   r += 1; b.kopf(d, r, ['Hinweise / Warnungen', '']); r++;
+  est.gruende.forEach(g => { const c = b.wert(d, r++, 1, `• Bitte prüfen: ${g}`); c.font = { color: { argb: 'FF8A5300' } }; });
   if (!e.warnungen.length) { b.wert(d, r++, 1, 'Keine Warnungen.'); }
-  e.warnungen.forEach(w => { const c = b.wert(d, r++, 1, `• ${w.text}`); c.font = { color: { argb: w.schwer ? 'FFC62828' : 'FF8A6D00' } }; });
+  [...e.warnungen.filter(w => w.fehler), ...e.warnungen.filter(w => !w.fehler)].forEach(w => { const c = b.wert(d, r++, 1, `• ${w.fehler ? 'FEHLER: ' : w.plausi ? 'Plausibilität: ' : ''}${w.text}`); c.font = { bold: !!w.fehler, color: { argb: w.schwer ? 'FFC62828' : 'FF8A6D00' } }; });
   r += 1; b.kopf(d, r, ['Inhalt dieser Datei', '']); r++;
   ['Gelbe Zellen = Eingaben (können in Excel geändert und wieder importiert werden)', 'Alle anderen Werte berechnet die App; Blätter sind ohne Passwort geschützt.', 'Re-Import: in der App „Excel importieren“ wählen – Änderungen werden zur Bestätigung angezeigt.']
     .forEach(t => b.wert(d, r++, 1, t));
@@ -348,7 +354,7 @@ export async function exportiere(plan: Plan): Promise<{ blob: Blob; dateiname: s
     const sw = b.sheet('Stundensatz', [50, 16]);
     b.titel(sw, `Stundensatz-Kalkulation (Basis Plan-Jahr ${plan.stundensatz.jahr})`);
     r = 3;
-    ([['Privatbedarf p. a. (inkl. SV/ESt)', s.privat, EUR0], ['Betriebliche Kosten ohne Material', s.betrieb, EUR0], ['Kapitaldienst', s.kapitaldienst, EUR0], ['Betriebliche Steuern', s.steuern, EUR0], ['Gewinnaufschlag', s.gewinnaufschlag, EUR0], ['Zu deckender Betrag', s.basis, EUR0], ['Produktive Stunden p. a.', s.stunden, '#,##0'], ['Mindest-Stundensatz netto', s.satz, EUR], ['Mindest-Tagessatz netto', s.tagessatz, EUR]] as [string, number, string][])
+    ([['Private Kosten p. a.', s.privatKosten, EUR0], ['+ KV/PV/RV', s.sv, EUR0], ['+ ESt, Soli, KiSt', s.est, EUR0], ['− private Einnahmen / Zuschüsse', -s.einnahmen, EUR0], ['+ Betriebliche Kosten ohne Material', s.betrieb, EUR0], ['+ Kapitaldienst', s.kapitaldienst, EUR0], ['+ Betriebliche Steuern', s.steuern, EUR0], ['+ Ausschüttungen', s.ausschuettung, EUR0], ['+ Gewinnaufschlag', s.gewinnaufschlag, EUR0], ['− Rohertrag anderer Geschäftsfelder', -s.rohertragAndere, EUR0], ['= Über Stunden zu decken', s.basis, EUR0], ['Produktive Stunden p. a.', s.produktiv, '#,##0'], ['Auslastungsquote', plan.stundensatz.auslastung, PCT], ['Fakturierbare Stunden p. a.', s.stunden, '#,##0'], ['Erforderlicher Stundensatz netto', s.satz, EUR], ['Erforderlicher Tagessatz netto', s.tagessatz, EUR], ['Geplanter Stundensatz netto', s.geplant, EUR], ['Differenz geplant − erforderlich', isFinite(s.differenz) ? s.differenz : 0, EUR]] as [string, number, string][])
       .forEach(([l, v, f]) => { b.wert(sw, r, 1, l); b.wert(sw, r, 2, v, f); r++; });
     b.schuetzen(sw);
   }

@@ -3,7 +3,8 @@ import type { Plan, Gruender, Rechtsform } from '../model/types';
 import type { Ergebnis } from '../calc/plan';
 import { jahr, privatKostenMonat, kontoAnalyse, stundensatz, sum, sollIstZeilen } from '../calc/plan';
 import { neuerGruender, neuesFeld, neuesDarlehen, uid } from '../model/defaults';
-import { Num, Txt, Sel, Check, Field, Card, Help, Tip, fmtEUR, fmtPct } from './fields';
+import { Num, Txt, Sel, Check, Field, Card, Help, Tip, HTip, Orient, fmtEUR, fmtPct } from './fields';
+import { hilfe } from '../model/hilfe';
 
 export type Upd = (fn: (p: Plan) => void) => void;
 export interface StepProps { plan: Plan; e: Ergebnis; upd: Upd }
@@ -52,7 +53,7 @@ export function ProjektStep({ plan, upd }: StepProps) {
   const f = (k: keyof Plan['projekt'], l: string, tip?: string, ph?: string) => <Field label={l} tip={tip}><Txt wide value={pr[k]} placeholder={ph} onChange={v => upd(p => (p.projekt[k] = v))} ariaLabel={l} /></Field>;
   return <>
     <Help>Angaben zum Vorhaben. Der <b>Gründungsmonat</b> ist Planmonat 1; alle Pläne laufen 36 Monate ab diesem Monat.</Help>
-    <Card title="Vorhaben">
+    <Card title={<>Vorhaben <HTip k="projekt.allgemein" /></>}>
       <div className="grid2">
         {f('name', 'Projekt / Firmenname *', undefined, 'z. B. Muster Werkstatt')}
         <Field label="Gründungsmonat *" tip="Erster Monat der Selbständigkeit = Planmonat 1."><input type="month" value={pr.gruendungsmonat} onChange={e => upd(p => (p.projekt.gruendungsmonat = e.target.value))} aria-label="Gründungsmonat" /></Field>
@@ -84,22 +85,22 @@ function J3Inputs({ werte, onChange, label }: { werte: number[]; onChange: (j: n
 export function PrivatStep({ plan, e, upd }: StepProps) {
   const kapg = plan.einstellungen.rechtsform === 'KAPG';
   return <>
-    <Help>Tragen Sie Ihre <b>monatlichen privaten Lebenshaltungskosten</b> je Planjahr ein. Krankenversicherung, Rente und Einkommensteuer werden automatisch berechnet und dürfen hier <b>nicht</b> erfasst werden. Tipp: „Jahr 1 → 2/3 übernehmen“ kopiert die Werte.</Help>
+    <Help>Tragen Sie Ihre <b>monatlichen privaten Lebenshaltungskosten</b> je Planjahr ein. Krankenversicherung, Rente und Einkommensteuer werden automatisch berechnet und dürfen hier <b>nicht</b> erfasst werden. Tipp: „Jahr 1 → 2/3 übernehmen“ kopiert die Werte. <HTip k="privat.allgemein" /><br /><span className="muted small">Grün markierte <b>Orientierungswerte</b> sind grobe, unverbindliche Richtwerte zur eigenen Kontrolle – keine Vorgaben der TAB oder von ThEx.</span></Help>
     {plan.gruender.map((g, gi) => {
       const st = e.steuerJahre;
       const set = (fn: (g: Gruender) => void) => upd(p => fn(p.gruender[gi]));
       return <Card key={g.id} title={`Private Kosten – ${g.name}`} actions={<button className="btn small ghost" onClick={() => set(x => x.privat.forEach(pp => (pp.werte = [pp.werte[0], pp.werte[0], pp.werte[0]])))}>Jahr 1 → 2/3 übernehmen</button>}>
         <table className="tbl inputs"><thead><tr><th>Position (je Monat)</th>{J.map(j => <th key={j}>{j}</th>)}</tr></thead>
           <tbody>
-            {g.privat.map((pp, pi) => <tr key={pp.id}><td><span className="grp">{pp.gruppe}</span> {pp.bez}</td><J3Inputs werte={pp.werte} label={pp.bez} onChange={(j, v) => set(x => (x.privat[pi].werte[j] = v))} /></tr>)}
+            {g.privat.map((pp, pi) => <tr key={pp.id}><td><span className="grp">{pp.gruppe}</span> {pp.bez} <HTip k={`privat.${pp.bez}`} /><Orient k={`privat.${pp.bez}`} /></td><J3Inputs werte={pp.werte} label={pp.bez} onChange={(j, v) => set(x => (x.privat[pi].werte[j] = v))} /></tr>)}
             <tr className="sum"><td>Summe private Kosten / Monat</td>{[0, 1, 2].map(j => <td key={j}>{fmtEUR(privatKostenMonat(g, j))}</td>)}</tr>
-            <tr><td>Private Einnahmen (Partner/in, Kindergeld, Miete …) / Monat <Tip text="Mindern die notwendige Privatentnahme aus dem Unternehmen." /></td><J3Inputs werte={g.einnahmen} label="Einnahmen" onChange={(j, v) => set(x => (x.einnahmen[j] = v))} /></tr>
+            <tr><td>Private Einnahmen (Partner/in, Kindergeld, Miete …) / Monat <HTip k="privat.einnahmen" /></td><J3Inputs werte={g.einnahmen} label="Einnahmen" onChange={(j, v) => set(x => (x.einnahmen[j] = v))} /></tr>
           </tbody></table>
         <div className="grid3">
-          <Field label="Krankenversicherung" tip="Gesetzlich: Beitrag aus Gewinn (mind. Mindestbemessung, max. BBG). Privat: Monatsbeitrag eintragen."><Sel value={g.kv} options={[['gesetzlich', 'gesetzlich'], ['privat', 'privat']]} onChange={v => set(x => (x.kv = v))} /></Field>
+          <Field label="Krankenversicherung" h="privat.kv" tip="Gesetzlich: Beitrag aus Gewinn (mind. Mindestbemessung, max. BBG). Privat: Monatsbeitrag eintragen."><Sel value={g.kv} options={[['gesetzlich', 'gesetzlich'], ['privat', 'privat']]} onChange={v => set(x => (x.kv = v))} /></Field>
           {g.kv === 'privat' ? <Field label="PKV-Beitrag / Monat"><Num value={g.kvPrivatMonat} onChange={v => set(x => (x.kvPrivatMonat = v))} suffix="€" /></Field>
             : <Field label="Pflegeversicherung"><Check value={g.pvKind} onChange={v => set(x => (x.pvKind = v))} label="mit Kind (niedrigerer Satz)" /></Field>}
-          <Field label="Rentenversicherung" tip="Pflichtversicherte Selbständige (z. B. Handwerk) oder freiwillig."><Sel value={g.grv} options={[['nein', 'keine'], ['einkommen', 'einkommensgerecht'], ['regel', 'Regelbeitrag'], ['halb', 'halber Regelbeitrag (Existenzgründer)']]} onChange={v => set(x => (x.grv = v))} /></Field>
+          <Field label="Rentenversicherung" h="privat.grv" tip="Pflichtversicherte Selbständige (z. B. Handwerk) oder freiwillig."><Sel value={g.grv} options={[['nein', 'keine'], ['einkommen', 'einkommensgerecht'], ['regel', 'Regelbeitrag'], ['halb', 'halber Regelbeitrag (Existenzgründer)']]} onChange={v => set(x => (x.grv = v))} /></Field>
           <Field label="Kirchensteuer"><Check value={g.kirche} onChange={v => set(x => (x.kirche = v))} label="kirchensteuerpflichtig (9 %)" /></Field>
           <Field label="Gründungszuschuss / Einstiegsgeld je Monat" tip="Wird in der Liquidität als private Einnahme berücksichtigt; zusätzlich zeigt der Plan die Liquidität ohne Zuschuss."><Num value={g.gzBetrag} onChange={v => set(x => (x.gzBetrag = v))} suffix="€" /></Field>
           <Field label="Zuschuss von / bis Planmonat"><span className="row gap"><Num value={g.gzVon} d={0} width={70} onChange={v => set(x => (x.gzVon = v))} /> – <Num value={g.gzBis} d={0} width={70} onChange={v => set(x => (x.gzBis = v))} /></span></Field>
@@ -113,7 +114,7 @@ export function PrivatStep({ plan, e, upd }: StepProps) {
           <tr><td>Gewinnanteil</td>{st.map((s, j) => <td key={j}>{fmtEUR(s.personen[gi]?.gewinn ?? 0)}</td>)}</tr>
           <tr><td>Kranken-/Pflegeversicherung p. a.</td>{st.map((s, j) => <td key={j}>{fmtEUR(s.personen[gi]?.kvpv ?? 0)}</td>)}</tr>
           <tr><td>Rentenversicherung p. a.</td>{st.map((s, j) => <td key={j}>{fmtEUR(s.personen[gi]?.grv ?? 0)}</td>)}</tr>
-          <tr><td>ESt + Soli + KiSt p. a.</td>{st.map((s, j) => <td key={j}>{fmtEUR(s.personen[gi]?.steuer ?? 0)}</td>)}</tr>
+          <tr><td>ESt + Soli + KiSt p. a. <HTip k="privat.est" /></td>{st.map((s, j) => <td key={j}>{fmtEUR(s.personen[gi]?.steuer ?? 0)}</td>)}</tr>
           <tr className="sum"><td>Privatbedarf gesamt / Monat</td>{[1, 2, 3].map(j => <td key={j}>{fmtEUR(jahr(e.privat[gi].bedarf, j) / 12)}</td>)}</tr>
         </tbody></table>}
       </Card>;
@@ -127,17 +128,17 @@ function KontoBlock({ g, gi, upd, feld, titel }: { g: Gruender; gi: number; upd:
   const plan1 = privatKostenMonat(g, 0);
   const abw = plan1 ? a.avgAus / plan1 - 1 : 0;
   return <Card title={`${titel} – ${g.name}`} actions={<button className="btn small ghost" onClick={() => upd(p => p.gruender[gi][feld].monate.push({ ein: '', ende: 0 }))}>+ Monat</button>}>
-    <Field label="Kontostand zu Beginn"><Num value={g[feld].anfang} suffix="€" onChange={v => upd(p => (p.gruender[gi][feld].anfang = v))} /></Field>
-    <table className="tbl inputs"><thead><tr><th>Monat</th><th>Anfang</th><th>Einzahlungen <Tip text="Mehrere Beträge mit + verbinden, z. B. 2100+150,50" /></th><th>Endbestand</th><th>Auszahlungen</th></tr></thead><tbody>
+    <Field label="Kontostand zu Beginn" h="hb.anfang"><Num value={g[feld].anfang} suffix="€" onChange={v => upd(p => (p.gruender[gi][feld].anfang = v))} /></Field>
+    <table className="tbl inputs"><thead><tr><th>Monat</th><th>Anfang</th><th>Einzahlungen <HTip k="hb.ein" /></th><th>Endbestand <HTip k="hb.ende" /></th><th>Auszahlungen</th></tr></thead><tbody>
       {a.zeilen.map((z, i) => <tr key={i}><td>Monat {i + 1}</td><td>{fmtEUR(z.anfang, 2)}</td>
         <td><Txt value={g[feld].monate[i].ein} placeholder="z. B. 2100+150" onChange={v => upd(p => (p.gruender[gi][feld].monate[i].ein = v))} /> <span className="muted small">= {fmtEUR(z.ein, 2)}</span></td>
         <td><Num value={g[feld].monate[i].ende} onChange={v => upd(p => (p.gruender[gi][feld].monate[i].ende = v))} /></td><td>{fmtEUR(z.aus, 2)}</td></tr>)}
     </tbody></table>
-    <p className="kpi-inline">Ø Auszahlungen: <b>{fmtEUR(a.avgAus)}</b> · geplante private Kosten Jahr 1: <b>{fmtEUR(plan1)}</b>{a.anzahl > 0 && plan1 > 0 && <> · Abweichung <b className={Math.abs(abw) > 0.1 ? 'neg' : 'pos'}>{fmtPct(abw)}</b></>}</p>
+    <p className="kpi-inline"><HTip k="privat.abgleich" /> Ø Auszahlungen: <b>{fmtEUR(a.avgAus)}</b> · geplante private Kosten Jahr 1: <b>{fmtEUR(plan1)}</b>{a.anzahl > 0 && plan1 > 0 && <> · Abweichung <b className={Math.abs(abw) > 0.1 ? 'neg' : 'pos'}>{fmtPct(abw)}</b></>}</p>
   </Card>;
 }
 export function HaushaltsbuchStep({ plan, upd }: StepProps) {
-  return <><Help>Optional: Prüfen Sie Ihre geplanten privaten Kosten mit einem Haushaltsbuch. Aus Anfangs- und Endbestand und den Einzahlungen ergeben sich die tatsächlichen Auszahlungen je Monat.</Help>
+  return <><Help>Optional: Prüfen Sie Ihre geplanten privaten Kosten mit einem Haushaltsbuch. Aus Anfangs- und Endbestand und den Einzahlungen ergeben sich die tatsächlichen Auszahlungen je Monat. <HTip k="hb.allgemein" /></Help>
     {plan.gruender.map((g, gi) => <KontoBlock key={g.id} g={g} gi={gi} upd={upd} feld="hb" titel="Haushaltsbuch" />)}</>;
 }
 export function PruefungStep({ plan, upd }: StepProps) {
@@ -156,14 +157,14 @@ export function UmsatzStep({ plan, e, upd }: StepProps) {
   const [jahrSicht, setJahr] = React.useState(0);
   const ms = Array.from({ length: 12 }, (_, i) => jahrSicht * 12 + i);
   return <>
-    <Help>Planen Sie je Geschäftsfeld <b>Nettopreis × Menge</b> für jeden Monat der ersten 24 Monate. Mit dem <b>Anlauffaktor</b> bilden Sie eine Anlaufphase oder Saison ab (100 % = voll). Jahr 3 ergibt sich aus Jahr 2 und der Wachstumsrate. Die <b>Materialquote</b> (Wareneinsatz/Fremdleistung in % vom Umsatz) bestimmt den Materialaufwand.</Help>
+    <Help>Planen Sie je Geschäftsfeld <b>Nettopreis × Menge</b> für jeden Monat der ersten 24 Monate. Mit dem <b>Anlauffaktor</b> bilden Sie eine Anlaufphase oder Saison ab (100 % = voll). Jahr 3 ergibt sich aus Jahr 2 und der Wachstumsrate. Die <b>Materialquote</b> (Wareneinsatz/Fremdleistung in % vom Umsatz) bestimmt den Materialaufwand. <HTip k="umsatz.allgemein" /></Help>
     <Card title="Umsatz-Einstellungen" actions={<button className="btn small" onClick={() => upd(p => p.umsatz.felder.push(neuesFeld(`Geschäftsfeld ${p.umsatz.felder.length + 1}`)))}>+ Geschäftsfeld</button>}>
       <div className="row gap wrap">
-        <Field label="Wachstum Jahr 3 ggü. Jahr 2"><Num pct value={plan.umsatz.wachstumJ3} onChange={v => upd(p => (p.umsatz.wachstumJ3 = v))} /></Field>
+        <Field label="Wachstum Jahr 3 ggü. Jahr 2" h="umsatz.wachstum"><Num pct value={plan.umsatz.wachstumJ3} onChange={v => upd(p => (p.umsatz.wachstumJ3 = v))} /></Field>
         <Field label="Ansicht"><Sel value={String(jahrSicht) as '0' | '1'} options={[['0', 'Jahr 1 (Monat 1–12)'], ['1', 'Jahr 2 (Monat 13–24)']]} onChange={v => setJahr(Number(v))} /></Field>
       </div>
       <div className="scroll"><table className="tbl inputs compact"><thead><tr><th></th>{ms.map(m => <th key={m}>{e.labels[m]}</th>)}</tr></thead><tbody>
-        <tr><td>Anlauffaktor</td>{ms.map(m => <td key={m}><Num pct value={plan.umsatz.faktor[m]} onChange={v => upd(p => (p.umsatz.faktor[m] = v))} ariaLabel={`Faktor ${m + 1}`} /></td>)}</tr>
+        <tr><td>Anlauffaktor <HTip k="umsatz.faktor" /></td>{ms.map(m => <td key={m}><Num pct value={plan.umsatz.faktor[m]} onChange={v => upd(p => (p.umsatz.faktor[m] = v))} ariaLabel={`Faktor ${m + 1}`} /></td>)}</tr>
       </tbody></table></div>
     </Card>
     {plan.umsatz.felder.map((f, fi) => {
@@ -173,13 +174,13 @@ export function UmsatzStep({ plan, e, upd }: StepProps) {
           <button className="btn small ghost" onClick={() => set(x => { for (let m = 1; m < 24; m++) { x.preis[m] = x.preis[0]; } })}>Preis M1 → alle</button>
           {plan.umsatz.felder.length > 1 && <button className="btn link danger" onClick={() => upd(p => del(p.umsatz.felder, fi))}>entfernen</button>}</>}>
         <div className="row gap wrap">
-          <Field label="USt-Satz"><Sel value={String(f.ust) as any} options={[['0.19', '19 %'], ['0.07', '7 %'], ['0', '0 % / steuerfrei']]} onChange={v => set(x => (x.ust = Number(v)))} /></Field>
-          <Field label="Materialquote" tip="Anteil Material, Waren oder Fremdleistungen am Nettoumsatz."><Num pct value={f.materialQuote} onChange={v => set(x => (x.materialQuote = v))} /></Field>
-          <Field label="Umsatz netto"><span className="kpi-inline">{J.map((j, i) => <span key={j}>{j}: <b>{fmtEUR(jahr(e.umsatzGF[fi], i + 1))}</b> </span>)}</span></Field>
+          <Field label="USt-Satz" h="umsatz.ust"><Sel value={String(f.ust) as any} options={[['0.19', '19 %'], ['0.07', '7 %'], ['0', '0 % / steuerfrei']]} onChange={v => set(x => (x.ust = Number(v)))} /></Field>
+          <Field label="Materialquote" h="umsatz.material" tip="Anteil Material, Waren oder Fremdleistungen am Nettoumsatz."><Num pct value={f.materialQuote} onChange={v => set(x => (x.materialQuote = v))} /></Field>
+          <Field label="Umsatz netto" tip={hilfe('renta.umsatz')?.text}><span className="kpi-inline">{J.map((j, i) => <span key={j}>{j}: <b>{fmtEUR(jahr(e.umsatzGF[fi], i + 1))}</b> </span>)}</span></Field>
         </div>
         <div className="scroll"><table className="tbl inputs compact"><thead><tr><th></th>{ms.map(m => <th key={m}>{e.labels[m]}</th>)}</tr></thead><tbody>
-          <tr><td>Preis netto</td>{ms.map(m => <td key={m}><Num value={f.preis[m]} onChange={v => set(x => (x.preis[m] = v))} ariaLabel={`Preis ${m + 1}`} /></td>)}</tr>
-          <tr><td>Menge</td>{ms.map(m => <td key={m}><Num value={f.menge[m]} onChange={v => set(x => (x.menge[m] = v))} ariaLabel={`Menge ${m + 1}`} /></td>)}</tr>
+          <tr><td>Preis netto <HTip k="umsatz.preis" /></td>{ms.map(m => <td key={m}><Num value={f.preis[m]} onChange={v => set(x => (x.preis[m] = v))} ariaLabel={`Preis ${m + 1}`} /></td>)}</tr>
+          <tr><td>Menge <HTip k="umsatz.menge" /></td>{ms.map(m => <td key={m}><Num value={f.menge[m]} onChange={v => set(x => (x.menge[m] = v))} ariaLabel={`Menge ${m + 1}`} /></td>)}</tr>
           <tr className="sum"><td>Umsatz</td>{ms.map(m => <td key={m}>{fmtEUR(e.umsatzGF[fi][m])}</td>)}</tr>
         </tbody></table></div>
       </Card>;
@@ -190,7 +191,7 @@ export function UmsatzStep({ plan, e, upd }: StepProps) {
 // ---------------- 4 Personal ----------------
 export function PersonalStep({ plan, e, upd }: StepProps) {
   return <>
-    <Help>Geplante Mitarbeiter/innen mit Bruttogehalt. Die Arbeitgeberkosten werden mit {fmtPct(plan.params.agSv)} (SV-pflichtig) bzw. {fmtPct(plan.params.agMinijob)} (Minijob) aufgeschlagen. Keine Mitarbeiter? Dann einfach „Schritt abschließen“.{plan.einstellungen.rechtsform === 'KAPG' && ' Das Geschäftsführergehalt wird in Schritt 2 erfasst.'}</Help>
+    <Help>Geplante Mitarbeiter/innen mit Bruttogehalt. Die Arbeitgeberkosten werden mit {fmtPct(plan.params.agSv)} (SV-pflichtig) bzw. {fmtPct(plan.params.agMinijob)} (Minijob) aufgeschlagen. Keine Mitarbeiter? Dann einfach „Schritt abschließen“. <HTip k="personal.allgemein" />{plan.einstellungen.rechtsform === 'KAPG' && ' Das Geschäftsführergehalt wird in Schritt 2 erfasst.'}</Help>
     <Card title="Stellen" actions={<button className="btn small" onClick={() => upd(p => p.personal.push({ id: uid(), bez: '', art: 'sv', brutto: 0, von: 1, bis: 36 }))}>+ Stelle</button>}>
       {plan.personal.length === 0 ? <p className="muted">Keine Mitarbeiter geplant.</p> :
         <table className="tbl inputs"><thead><tr><th>Stelle</th><th>Art</th><th>Brutto / Monat</th><th>von Monat</th><th>bis Monat</th><th>AG-Kosten Jahr 1</th><th></th></tr></thead><tbody>
@@ -203,14 +204,14 @@ export function PersonalStep({ plan, e, upd }: StepProps) {
             <td>{fmtEUR(Array.from({ length: 12 }, (_, m) => (m + 1 >= s.von && m + 1 <= s.bis ? s.brutto * (1 + (s.art === 'minijob' ? plan.params.agMinijob : plan.params.agSv)) : 0)).reduce((a, b) => a + b, 0))}</td>
             <td><button className="btn link danger" onClick={() => upd(p => del(p.personal, i))}>×</button></td></tr>)}
         </tbody></table>}
-      <p className="kpi-inline">Personalaufwand: {J.map((j, i) => <span key={j}>{j} <b>{fmtEUR(jahr(e.personal, i + 1))}</b> </span>)}</p>
+      <p className="kpi-inline">Personalaufwand <HTip k="personal.quote" />: {J.map((j, i) => <span key={j}>{j} <b>{fmtEUR(jahr(e.personal, i + 1))}</b>{e.jahre[i].umsatz > 0 && <span className="muted"> ({fmtPct(jahr(e.personal, i + 1) / e.jahre[i].umsatz)} vom Umsatz)</span>} </span>)}</p><Orient k="personal.quote" />
     </Card>
   </>;
 }
 
 // ---------------- 5 Kapitalbedarf ----------------
 export function InvestStep({ plan, e, upd }: StepProps) {
-  const einmal = (key: 'betriebskosten' | 'gruendungskosten', titel: string, tip: string) => <Card title={titel} help={tip} actions={<button className="btn small" onClick={() => upd(p => p[key].push({ id: uid(), bez: '', netto: 0, ust: 0.19, monat: 1 }))}>+ Position</button>}>
+  const einmal = (key: 'betriebskosten' | 'gruendungskosten', titel: string, tip: string, hk: string) => <Card title={<>{titel} <HTip k={hk} /></>} help={<>{tip} <Orient k={hk} /></>} actions={<button className="btn small" onClick={() => upd(p => p[key].push({ id: uid(), bez: '', netto: 0, ust: 0.19, monat: 1 }))}>+ Position</button>}>
     {plan[key].length > 0 && <table className="tbl inputs"><thead><tr><th>Bezeichnung</th><th>Netto</th><th>USt</th><th>Planmonat</th><th></th></tr></thead><tbody>
       {plan[key].map((x, i) => <tr key={x.id}><td><Txt value={x.bez} onChange={v => upd(p => (p[key][i].bez = v))} /></td><td><Num value={x.netto} onChange={v => upd(p => (p[key][i].netto = v))} /></td>
         <td><Num pct value={x.ust} onChange={v => upd(p => (p[key][i].ust = v))} /></td><td><Num d={0} value={x.monat} min={1} max={36} onChange={v => upd(p => (p[key][i].monat = v))} /></td>
@@ -218,9 +219,9 @@ export function InvestStep({ plan, e, upd }: StepProps) {
   </Card>;
   const kb = e.kapitalbedarf;
   return <>
-    <Help>Investitionen (Anschaffungskosten netto) werden über die Nutzungsdauer monatlich abgeschrieben; <b>geringwertige Wirtschaftsgüter</b> (GWG, bis 800 € netto) sofort. Einmalige Betriebs- und Gründungskosten sind sofort Aufwand. Die Umsatzsteuer wird je Position mit ihrem eigenen Satz berücksichtigt.</Help>
-    <Card title="Investitionen" actions={<button className="btn small" onClick={() => upd(p => p.invest.push({ id: uid(), bez: '', netto: 0, ust: 0.19, monat: 1, ndJahre: 5, gwg: false }))}>+ Investition</button>}>
-      {plan.invest.length > 0 && <table className="tbl inputs"><thead><tr><th>Bezeichnung</th><th>Netto</th><th>USt</th><th>Planmonat</th><th>Nutzungsdauer (J.)</th><th>GWG</th><th>AfA / Jahr</th><th></th></tr></thead><tbody>
+    <Help>Investitionen (Anschaffungskosten netto) werden über die Nutzungsdauer monatlich abgeschrieben; <b>geringwertige Wirtschaftsgüter</b> (GWG, bis 800 € netto) sofort. Einmalige Betriebs- und Gründungskosten sind sofort Aufwand. Die Umsatzsteuer wird je Position mit ihrem eigenen Satz berücksichtigt. <HTip k="invest.allgemein" /></Help>
+    <Card title={<>Investitionen <HTip k="invest.monat" /></>} help={<Orient k="invest.nd" />} actions={<button className="btn small" onClick={() => upd(p => p.invest.push({ id: uid(), bez: '', netto: 0, ust: 0.19, monat: 1, ndJahre: 5, gwg: false }))}>+ Investition</button>}>
+      {plan.invest.length > 0 && <table className="tbl inputs"><thead><tr><th>Bezeichnung</th><th>Netto</th><th>USt</th><th>Planmonat</th><th>Nutzungsdauer (J.) <HTip k="invest.nd" /></th><th>GWG</th><th>AfA / Jahr</th><th></th></tr></thead><tbody>
         {plan.invest.map((x, i) => <tr key={x.id}>
           <td><Txt value={x.bez} onChange={v => upd(p => (p.invest[i].bez = v))} /></td><td><Num value={x.netto} onChange={v => upd(p => (p.invest[i].netto = v))} /></td>
           <td><Num pct value={x.ust} onChange={v => upd(p => (p.invest[i].ust = v))} /></td><td><Num d={0} value={x.monat} min={1} max={36} onChange={v => upd(p => (p.invest[i].monat = v))} /></td>
@@ -229,12 +230,13 @@ export function InvestStep({ plan, e, upd }: StepProps) {
           <td>{fmtEUR(x.gwg ? x.netto : x.ndJahre > 0 ? x.netto / x.ndJahre : x.netto)}</td>
           <td><button className="btn link danger" onClick={() => upd(p => del(p.invest, i))}>×</button></td></tr>)}</tbody></table>}
     </Card>
-    {einmal('betriebskosten', 'Einmalige Betriebskosten', 'z. B. Erstausstattung Warenlager, Renovierung, Markteinführung. Einmalige Kosten im angegebenen Monat.')}
-    {einmal('gruendungskosten', 'Gründungskosten', 'z. B. Gewerbeanmeldung, Notar, Handelsregister, Beratung.')}
-    <Card title="Kapitalbedarf">
+    {einmal('betriebskosten', 'Einmalige Betriebskosten', 'z. B. Erstausstattung Warenlager, Renovierung, Markteinführung. Einmalige Kosten im angegebenen Monat.', 'invest.betriebskosten')}
+    {einmal('gruendungskosten', 'Gründungskosten', 'z. B. Gewerbeanmeldung, Notar, Handelsregister, Beratung.', 'invest.gruendung')}
+    <Card title={<>Kapitalbedarf <HTip k="invest.finanzierung" /></>}>
       <table className="tbl result"><tbody>
         <tr><td>Investitionen</td><td>{fmtEUR(kb.invest)}</td></tr><tr><td>Einmalige Betriebskosten</td><td>{fmtEUR(kb.betriebskosten)}</td></tr><tr><td>Gründungskosten</td><td>{fmtEUR(kb.gruendungskosten)}</td></tr>
         <tr className="sum"><td>Kapitalbedarf netto</td><td>{fmtEUR(kb.summe)}</td></tr><tr><td>zzgl. Umsatzsteuer (Vorfinanzierung bis zur Erstattung)</td><td>{fmtEUR(kb.ustSumme)}</td></tr>
+        <tr><td>Finanzierung (Darlehen + Eigenmittel, Schritt 7/8)</td><td className={e.finanzierung < kb.summe ? 'neg' : ''}>{fmtEUR(e.finanzierung)}</td></tr>
       </tbody></table>
     </Card>
   </>;
@@ -249,14 +251,14 @@ export function KostenStep({ plan, e, upd }: StepProps) {
         <td><button className="btn link danger" onClick={() => upd(p => del(p.kosten[key], i))}>×</button></td></tr>)}</tbody></table>}
   </Card>;
   return <>
-    <Help>Laufende betriebliche Kosten <b>netto</b> für die 12 Monate des ersten Jahres. Jahr 2 und 3 werden mit den Steigerungsraten hochgerechnet. Mit „M1 → alle“ übertragen Sie einen Monatswert auf das ganze Jahr.</Help>
+    <Help>Laufende betriebliche Kosten <b>netto</b> für die 12 Monate des ersten Jahres. Jahr 2 und 3 werden mit den Steigerungsraten hochgerechnet. Mit „M1 → alle“ übertragen Sie einen Monatswert auf das ganze Jahr. <HTip k="kosten.allgemein" /><br /><span className="muted small">Orientierungswerte (grün) sind unverbindliche Richtwerte – keine Vorgaben der TAB oder von ThEx.</span></Help>
     <Card title="Laufende Kosten Jahr 1" actions={<span className="row gap">
-      <Field label="Steigerung J2"><Num pct value={plan.kosten.steigerungJ2} onChange={v => upd(p => (p.kosten.steigerungJ2 = v))} /></Field>
+      <Field label="Steigerung J2" h="kosten.steigerung"><Num pct value={plan.kosten.steigerungJ2} onChange={v => upd(p => (p.kosten.steigerungJ2 = v))} /></Field>
       <Field label="Steigerung J3"><Num pct value={plan.kosten.steigerungJ3} onChange={v => upd(p => (p.kosten.steigerungJ3 = v))} /></Field>
       <button className="btn small" onClick={() => upd(p => p.kosten.posten.push({ id: uid(), bez: 'Neue Position', ust: 0.19, monate: Array(12).fill(0) }))}>+ Position</button></span>}>
       <div className="scroll"><table className="tbl inputs compact"><thead><tr><th>Position</th><th>USt</th>{e.labels.slice(0, 12).map(l => <th key={l}>{l}</th>)}<th>Jahr 1</th><th></th></tr></thead><tbody>
         {plan.kosten.posten.map((k, i) => <tr key={k.id}>
-          <td><Txt value={k.bez} onChange={v => upd(p => (p.kosten.posten[i].bez = v))} /></td>
+          <td className="nowrap"><Txt value={k.bez} onChange={v => upd(p => (p.kosten.posten[i].bez = v))} /> <HTip k={`kosten.${k.bez}`} />{hilfe(`kosten.${k.bez}`)?.orientierung && <div><Orient k={`kosten.${k.bez}`} /></div>}</td>
           <td><Sel value={String(k.ust) as any} options={[['0.19', '19 %'], ['0.07', '7 %'], ['0', '0 %']]} onChange={v => upd(p => (p.kosten.posten[i].ust = Number(v)))} /></td>
           {k.monate.map((v, m) => <td key={m}><Num value={v} onChange={x => upd(p => (p.kosten.posten[i].monate[m] = x))} ariaLabel={`${k.bez} M${m + 1}`} /></td>)}
           <td className="b">{fmtEUR(sum(k.monate))}</td>
@@ -274,7 +276,7 @@ export function KostenStep({ plan, e, upd }: StepProps) {
 // ---------------- 7 Darlehen ----------------
 export function DarlehenStep({ plan, e, upd }: StepProps) {
   return <>
-    <Help>Darlehen 1 ist das <b>Mikrodarlehen</b> der Thüringer Aufbaubank (5.000–35.000 €, Folgedarlehen bis 45.000 € gesamt; Laufzeit bis 84 Monate, davon bis zu 12 tilgungsfrei; die Laufzeit verlängert sich dadurch nicht). Zins und Tilgung werden monatlich nachträglich gezahlt. Weitere oder bereits laufende Kredite sind meist <b>Annuitätendarlehen</b>.</Help>
+    <Help>Darlehen 1 ist das <b>Mikrodarlehen</b> der Thüringer Aufbaubank (5.000–35.000 €, Folgedarlehen bis 45.000 € gesamt; Laufzeit bis 84 Monate, davon bis zu 12 tilgungsfrei; die Laufzeit verlängert sich dadurch nicht). Zins und Tilgung werden monatlich nachträglich gezahlt. Weitere oder bereits laufende Kredite sind meist <b>Annuitätendarlehen</b>. <HTip k="darlehen.allgemein" /></Help>
     {plan.darlehen.map((d, i) => {
       const set = (fn: (x: typeof d) => void) => upd(p => fn(p.darlehen[i]));
       const t = e.darlehen[i].plan;
@@ -283,9 +285,9 @@ export function DarlehenStep({ plan, e, upd }: StepProps) {
         <div className="grid4">
           <Field label={d.bestehend ? 'Restschuld heute' : 'Darlehensbetrag'}><Num value={d.betrag} suffix="€" onChange={v => set(x => (x.betrag = v))} ariaLabel={`Betrag Darlehen ${i + 1}`} /></Field>
           <Field label={d.bestehend ? 'Restlaufzeit (Monate)' : 'Laufzeit (Monate)'} tip="Gesamtlaufzeit inklusive tilgungsfreier Monate."><Num d={0} value={d.laufzeit} onChange={v => set(x => (x.laufzeit = v))} /></Field>
-          <Field label="davon tilgungsfrei"><Num d={0} value={d.tilgungsfrei} onChange={v => set(x => (x.tilgungsfrei = v))} /></Field>
+          <Field label="davon tilgungsfrei" h="darlehen.tilgungsfrei"><Num d={0} value={d.tilgungsfrei} onChange={v => set(x => (x.tilgungsfrei = v))} /></Field>
           <Field label="Art"><Sel value={d.art} options={[['tilgung', 'Tilgungsdarlehen (gleiche Tilgung)'], ['annuitaet', 'Annuitätendarlehen (gleiche Rate)']]} onChange={v => set(x => (x.art = v))} /></Field>
-          <Field label="Sollzins p. a." tip="Gerechnet wird mit dem Sollzins (Nominalzins)."><Num pct value={d.sollzins} onChange={v => set(x => (x.sollzins = v))} /></Field>
+          <Field label="Sollzins p. a." tip={'Gerechnet wird mit dem Sollzins (Nominalzins).\n\n' + (hilfe('darlehen.zinsen')?.text ?? '')}><Num pct value={d.sollzins} onChange={v => set(x => (x.sollzins = v))} /></Field>
           <Field label="Effektivzins p. a. (Info)"><Num pct value={d.effzins} onChange={v => set(x => (x.effzins = v))} /></Field>
           {!d.bestehend && <Field label="Auszahlung im Planmonat"><Num d={0} value={d.auszahlungMonat} min={1} max={36} onChange={v => set(x => (x.auszahlungMonat = v))} /></Field>}
           {i > 0 && <Field label="Status"><Check value={d.bestehend} onChange={v => set(x => (x.bestehend = v))} label="bereits ausgezahlt (bestehender Kredit)" /></Field>}
@@ -306,18 +308,18 @@ export function DarlehenStep({ plan, e, upd }: StepProps) {
 export function LiquiditaetStep({ plan, e, upd }: StepProps) {
   const em = plan.eigenmittel;
   const zeile = (l: string, k: 'bar' | 'privatdarlehen' | 'sachzuschuss', km: 'barMonat' | 'privatdarlehenMonat' | 'sachzuschussMonat', tip: string) =>
-    <tr><td>{l} <Tip text={tip} /></td><td><Num value={em[k]} onChange={v => upd(p => (p.eigenmittel[k] = v))} /></td><td><Num d={0} value={em[km]} min={1} max={36} onChange={v => upd(p => (p.eigenmittel[km] = v))} /></td></tr>;
+    <tr><td>{l} <Tip text={tip} /></td><td><Num value={em[k]} ariaLabel={`${l} Betrag`} onChange={v => upd(p => (p.eigenmittel[k] = v))} /></td><td><Num d={0} ariaLabel={`${l} Planmonat`} value={em[km]} min={1} max={36} onChange={v => upd(p => (p.eigenmittel[km] = v))} /></td></tr>;
   return <>
-    <Help>Eigenmittel, Kaution und die Zahlweise der Umsatzsteuer. Private Einnahmen und Gründungszuschuss haben Sie bereits in Schritt 2 erfasst; sie mindern die Privatentnahme in der Liquidität.</Help>
+    <Help>Eigenmittel, Kaution und die Zahlweise der Umsatzsteuer. Private Einnahmen und Gründungszuschuss haben Sie bereits in Schritt 2 erfasst; sie mindern die Privatentnahme in der Liquidität. <HTip k="liq.privatentnahme" /></Help>
     <Card title="Eigenmittel und Kaution">
       <table className="tbl inputs"><thead><tr><th></th><th>Betrag</th><th>Planmonat</th></tr></thead><tbody>
         {zeile('Barmittel / Einlage', 'bar', 'barMonat', 'Eigenes Geld, das Sie in das Unternehmen einbringen.')}
         {zeile('Privatdarlehen (Familie, Freunde)', 'privatdarlehen', 'privatdarlehenMonat', 'Zufluss in der Liquidität; Rückzahlung bitte als „bestehender Kredit“ oder a.o. Aufwand planen.')}
         {zeile('Sachmittelzuschuss (z. B. Jobcenter)', 'sachzuschuss', 'sachzuschussMonat', 'Zuschuss für Sachmittel als Einzahlung.')}
         <tr><td>Sacheinlagen (Wert, nicht liquiditätswirksam)</td><td><Num value={em.sacheinlage} onChange={v => upd(p => (p.eigenmittel.sacheinlage = v))} /></td><td></td></tr>
-        <tr><td>Mietkaution</td><td><Num value={plan.liquiditaet.kaution} onChange={v => upd(p => (p.liquiditaet.kaution = v))} /></td><td><Num d={0} value={plan.liquiditaet.kautionMonat} min={1} max={36} onChange={v => upd(p => (p.liquiditaet.kautionMonat = v))} /></td></tr>
+        <tr><td>Mietkaution <HTip k="liq.kaution" /><Orient k="liq.kaution" /></td><td><Num value={plan.liquiditaet.kaution} onChange={v => upd(p => (p.liquiditaet.kaution = v))} /></td><td><Num d={0} value={plan.liquiditaet.kautionMonat} min={1} max={36} onChange={v => upd(p => (p.liquiditaet.kautionMonat = v))} /></td></tr>
       </tbody></table>
-      <Field label="Zahlung der Umsatzsteuer" tip="Monatlich im Folgemonat ist der Normalfall für Gründer; mit Dauerfristverlängerung einen Monat später."><Sel value={plan.liquiditaet.ustModus} options={[['folgemonat', 'monatlich, im Folgemonat'], ['dfv', 'monatlich mit Dauerfristverlängerung'], ['quartal', 'vierteljährlich'], ['sofort', 'im selben Monat (vereinfacht)']]} onChange={v => upd(p => (p.liquiditaet.ustModus = v))} /></Field>
+      <Field label="Zahlung der Umsatzsteuer" h="liq.ust" tip="Monatlich im Folgemonat ist der Normalfall für Gründer; mit Dauerfristverlängerung einen Monat später."><Sel value={plan.liquiditaet.ustModus} options={[['folgemonat', 'monatlich, im Folgemonat'], ['dfv', 'monatlich mit Dauerfristverlängerung'], ['quartal', 'vierteljährlich'], ['sofort', 'im selben Monat (vereinfacht)']]} onChange={v => upd(p => (p.liquiditaet.ustModus = v))} /></Field>
     </Card>
     <Card title="Liquidität kumuliert (Vorschau)">
       <p className="kpi-inline">Tiefster Stand: <b className={e.liq.tiefpunkt < 0 ? 'neg' : 'pos'}>{fmtEUR(e.liq.tiefpunkt)}</b> im {e.labels[e.liq.tiefpunktIdx]} · Ende Jahr 1: <b>{fmtEUR(e.liq.kumuliert[11])}</b> · Ende Jahr 3: <b>{fmtEUR(e.liq.kumuliert[35])}</b></p>
@@ -328,14 +330,14 @@ export function LiquiditaetStep({ plan, e, upd }: StepProps) {
 // ---------------- 9 Steuern ----------------
 export function SteuernStep({ plan, e, upd }: StepProps) {
   const pp = plan.params;
-  const n = (k: keyof typeof pp, l: string, pct = false, tip?: string) => <Field label={l} tip={tip}><Num pct={pct} value={pp[k] as number} onChange={v => upd(p => ((p.params as any)[k] = v))} /></Field>;
+  const n = (k: keyof typeof pp, l: string, pct = false, tip?: string, h?: string) => <Field label={l} tip={tip} h={h}><Num pct={pct} value={pp[k] as number} onChange={v => upd(p => ((p.params as any)[k] = v))} /></Field>;
   const kapg = plan.einstellungen.rechtsform === 'KAPG';
   return <>
     <Help>Prüfen Sie die Pauschalen. Wichtig ist vor allem der <b>Gewerbesteuer-Hebesatz Ihrer Gemeinde</b> und der <b>Zusatzbeitrag Ihrer Krankenkasse</b>. Werte für {pp.jahr}; Änderungen gelten nur für diesen Plan.</Help>
     <Card title="Parameter">
       <div className="grid4">
-        {n('hebesatz', 'GewSt-Hebesatz (4,7 = 470 %)', false, 'Hebesatz der Gemeinde geteilt durch 100.')}
-        {n('kvZusatz', 'KV-Zusatzbeitrag', true)}{n('kvSatz', 'KV allgemeiner/ermäßigter Satz', true)}{n('kvKrankengeld', 'KV Krankengeld-Anteil', true)}
+        {n('hebesatz', 'GewSt-Hebesatz (4,7 = 470 %)', false, undefined, 'steuern.hebesatz')}
+        {n('kvZusatz', 'KV-Zusatzbeitrag', true, undefined, 'steuern.kvZusatz')}{n('kvSatz', 'KV allgemeiner/ermäßigter Satz', true)}{n('kvKrankengeld', 'KV Krankengeld-Anteil', true)}
         {n('pvKinderlos', 'PV kinderlos', true)}{n('pvKind', 'PV mit Kind', true)}{n('kvMindestBemessungMonat', 'KV-Mindestbemessung / Monat')}{n('kvBbg', 'BBG KV/PV p. a.')}
         {n('grvSatz', 'Rentenversicherung', true)}{n('grvRegelbeitrag', 'GRV-Regelbeitrag / Monat')}{n('agSv', 'AG-Anteil SV', true)}{n('agMinijob', 'AG-Anteil Minijob', true)}
         {n('kdGrenze', 'KD-Grenzwert', true, 'Kapitaldienst darf höchstens diesen Anteil der KD-Grenze ausmachen.')}{n('kdGelb', 'KD gelbe Zone ab', true)}
@@ -356,27 +358,67 @@ export function SteuernStep({ plan, e, upd }: StepProps) {
   </>;
 }
 
-// ---------------- 11 Stundensatz ----------------
+// ---------------- 11 Stundensatz (rückwärts) ----------------
 export function StundensatzStep({ plan, e, upd }: StepProps) {
   const s = plan.stundensatz, r = stundensatz(plan, e);
-  const n = (k: keyof typeof s, l: string, pct = false) => <Field label={l}><Num pct={pct} d={1} value={s[k] as number} onChange={v => upd(p => ((p.stundensatz as any)[k] = v))} /></Field>;
+  const kapg = plan.einstellungen.rechtsform === 'KAPG';
+  const n = (k: keyof typeof s, l: string, h: string, opt: { pct?: boolean; suffix?: string; d?: number } = {}) => <Field label={l} h={h}><Num pct={opt.pct} d={opt.d ?? 1} suffix={opt.suffix} value={s[k] as number} onChange={v => upd(p => ((p.stundensatz as any)[k] = v))} ariaLabel={l} /></Field>;
+  const zeile = (l: React.ReactNode, v: number, cls = '', h?: string) => <tr className={cls}><td>{l}{h && <> <HTip k={h} /></>}</td><td>{fmtEUR(v)}</td></tr>;
+  const ok = r.geplant > 0 && r.geplant >= r.satz;
   return <>
-    <Help>Welchen Stundensatz brauchen Sie mindestens, um private Kosten, Betriebskosten, Kapitaldienst und Steuern zu decken? Grundlage sind Ihre bisherigen Eingaben.</Help>
-    <Card title="Annahmen">
-      <Check value={s.aktiv} onChange={v => upd(p => (p.stundensatz.aktiv = v))} label="Stundensatz-Kalkulation in den Excel-Export aufnehmen" />
-      <div className="grid4">
-        <Field label="Basis Planjahr"><Sel value={String(s.jahr) as '1'} options={[['1', 'Jahr 1'], ['2', 'Jahr 2'], ['3', 'Jahr 3']]} onChange={v => upd(p => (p.stundensatz.jahr = Number(v) as 1))} /></Field>
-        {n('arbeitstage', 'Arbeitstage p. a.')}{n('urlaub', 'Urlaubstage')}{n('krankheit', 'Krankheitstage')}{n('feiertage', 'Feiertage')}{n('stundenTag', 'Stunden / Tag')}{n('unproduktiv', 'davon unproduktiv (Büro, Akquise)')}{n('ausfall', 'Auslastungsausfall', true)}{n('gewinnaufschlag', 'Gewinnaufschlag / Rücklage p. a.')}
-      </div>
-    </Card>
-    <Card title="Ergebnis"><table className="tbl result"><tbody>
-      <tr><td>Privatbedarf inkl. SV und Steuern</td><td>{fmtEUR(r.privat)}</td></tr><tr><td>Betriebliche Kosten (ohne Material)</td><td>{fmtEUR(r.betrieb)}</td></tr><tr><td>Kapitaldienst</td><td>{fmtEUR(r.kapitaldienst)}</td></tr>
-      <tr><td>Betriebliche Steuern</td><td>{fmtEUR(r.steuern)}</td></tr><tr><td>Gewinnaufschlag</td><td>{fmtEUR(r.gewinnaufschlag)}</td></tr><tr className="sum"><td>Zu decken</td><td>{fmtEUR(r.basis)}</td></tr>
-      <tr><td>Produktive Stunden p. a.</td><td>{Math.round(r.stunden).toLocaleString('de-DE')} h</td></tr>
-      <tr className="sum big"><td>Mindest-Stundensatz netto</td><td>{fmtEUR(r.satz, 2)}</td></tr><tr><td>Mindest-Tagessatz netto ({r.hTag} produktive h)</td><td>{fmtEUR(r.tagessatz, 2)}</td></tr>
-    </tbody></table></Card>
+    <Help>Rückwärtsrechnung: Welchen <b>Netto-Stundensatz</b> brauchen Sie, damit private Kosten, Sozialversicherung, Einkommensteuer, Betriebskosten und Kapitaldienst gedeckt sind? Die Beträge stammen aus Ihren bisherigen Eingaben (Planjahr {s.jahr}); geteilt wird durch Ihre <b>fakturierbaren</b> Stunden pro Jahr. Vergleichen Sie das Ergebnis mit Ihrem geplanten Stundensatz.</Help>
+    <div className="grid2">
+      <Card title="Ihre Arbeitszeit">
+        <div className="grid2">
+          <Field label="Basis Planjahr"><Sel value={String(s.jahr) as '1'} options={[['1', 'Jahr 1'], ['2', 'Jahr 2 (KD-Jahr)'], ['3', 'Jahr 3']]} onChange={v => upd(p => (p.stundensatz.jahr = Number(v) as 1))} ariaLabel="Basis Planjahr" /></Field>
+          {n('arbeitstage', 'Arbeitstage p. a.', 'std.arbeitstage', { d: 0 })}{n('urlaub', 'Urlaubstage', 'std.urlaub', { d: 0 })}{n('krankheit', 'Krankheitstage', 'std.krankheit', { d: 0 })}{n('feiertage', 'Feiertage (werktags)', 'std.feiertage', { d: 0 })}
+          {n('stundenTag', 'Arbeitsstunden / Tag', 'std.stundenTag')}{n('unproduktiv', 'davon nicht fakturierbar (h/Tag)', 'std.unproduktiv')}{n('auslastung', 'Auslastungsquote', 'std.auslastung', { pct: true })}
+        </div>
+      </Card>
+      <Card title="Ziel und Vergleich">
+        <div className="grid2">
+          {n('gewinnaufschlag', 'Gewinnaufschlag / Rücklage p. a.', 'std.gewinnaufschlag', { suffix: '€', d: 0 })}
+          {n('geplant', 'Geplanter Stundensatz netto', 'std.satz', { suffix: '€', d: 2 })}
+        </div>
+        {plan.umsatz.felder.length > 1 && <Field label="Nach Stunden abgerechnete Geschäftsfelder" tip="Der Rohertrag (Umsatz − Material) der übrigen Geschäftsfelder trägt bereits zur Deckung bei und wird abgezogen. Nichts angehakt = alle Geschäftsfelder werden nach Stunden abgerechnet.">
+          <div>{plan.umsatz.felder.map(f => <Check key={f.id} value={s.stundenFelder.includes(f.id)} label={f.name || 'Geschäftsfeld'} onChange={v => upd(p => { const l = p.stundensatz.stundenFelder.filter(x => x !== f.id); if (v) l.push(f.id); p.stundensatz.stundenFelder = l; })} />)}</div>
+        </Field>}
+        <Check value={s.aktiv} onChange={v => upd(p => (p.stundensatz.aktiv = v))} label="Stundensatz-Kalkulation in Excel- und PDF-Export aufnehmen" />
+      </Card>
+    </div>
+    <div className="grid2">
+      <Card title="Rückwärtsrechnung (pro Jahr)"><table className="tbl result"><tbody>
+        {!kapg && <>{zeile('Private Kosten (12 Monate)', r.privatKosten, '', 'std.privat')}{zeile('+ Kranken-/Pflege-/Rentenversicherung', r.sv)}{zeile('+ Einkommensteuer, Soli, KiSt (lt. Plan)', r.est, '', 'privat.est')}
+          {r.einnahmen > 0 && zeile('− private Einnahmen / Gründungszuschuss', -r.einnahmen)}</>}
+        {zeile(kapg ? 'Betriebliche Kosten inkl. GF-Gehalt (ohne Material)' : '+ Betriebliche Kosten (Personal, laufend, einmalig; ohne Material)', r.betrieb, '', 'std.betrieb')}
+        {zeile('+ Kapitaldienst (Zins + Tilgung)', r.kapitaldienst, '', 'std.kapitaldienst')}
+        {zeile('+ Betriebliche Steuern (GewSt/KSt)', r.steuern)}
+        {kapg && r.ausschuettung > 0 && zeile('+ Ausschüttungen', r.ausschuettung)}
+        {zeile('+ Gewinnaufschlag / Rücklage', r.gewinnaufschlag, '', 'std.gewinnaufschlag')}
+        {r.rohertragAndere > 0 && zeile(<>− Rohertrag anderer Geschäftsfelder ({r.andereFelder.join(', ')})</>, -r.rohertragAndere)}
+        {zeile('= Über Stunden zu decken', r.basis, 'sum')}
+        <tr><td>Arbeitstage {s.arbeitstage} − Urlaub {s.urlaub} − Krankheit {s.krankheit} − Feiertage {s.feiertage}</td><td>{r.tage} Tage</td></tr>
+        <tr><td>× fakturierbare Stunden je Tag ({fmtNum1(s.stundenTag)} − {fmtNum1(s.unproduktiv)})</td><td>{Math.round(r.produktiv).toLocaleString('de-DE')} h</td></tr>
+        <tr><td>× Auslastungsquote {fmtPct(s.auslastung, 0)}</td><td><b>{Math.round(r.stunden).toLocaleString('de-DE')} h</b></td></tr>
+        <tr className="sum big"><td>Erforderlicher Stundensatz netto <HTip k="std.satz" /></td><td data-testid="std-satz">{fmtEUR(r.satz, 2)}</td></tr>
+        <tr><td>Erforderlicher Tagessatz netto ({fmtNum1(r.hTag)} fakturierbare h)</td><td>{fmtEUR(r.tagessatz, 2)}</td></tr>
+      </tbody></table>
+        <p className="muted small">AfA wird nicht angesetzt, weil die Tilgung die Investition bereits abdeckt (die Vorlage rechnet mit AfA). Einkommensteuer und Sozialversicherung stammen aus dem Gesamtplan, also aus dem dort geplanten Gewinn.</p></Card>
+      <Card title="Vergleich mit Ihrem geplanten Satz">
+        {r.geplant > 0 ? <table className="tbl result vergleich"><tbody>
+          <tr><td>Geplanter Stundensatz</td><td>{fmtEUR(r.geplant, 2)}</td></tr>
+          <tr><td>Erforderlicher Stundensatz</td><td>{fmtEUR(r.satz, 2)}</td></tr>
+          <tr className="sum"><td>Differenz je Stunde</td><td className={ok ? 'pos' : 'neg'} data-testid="std-diff">{r.differenz >= 0 ? '+' : ''}{fmtEUR(r.differenz, 2)}</td></tr>
+          <tr><td>Kostendeckung</td><td className={ok ? 'pos' : 'neg'}>{isFinite(r.deckung) ? fmtPct(r.deckung, 0) : '–'}</td></tr>
+          <tr><td>Nötige fakturierbare Stunden beim geplanten Satz</td><td>{Math.round(r.stundenNoetig).toLocaleString('de-DE')} h</td></tr>
+          <tr><td>entspricht einer Auslastung von</td><td className={r.auslastungNoetig > 1 ? 'neg' : ''}>{isFinite(r.auslastungNoetig) ? fmtPct(r.auslastungNoetig, 0) : '–'}</td></tr>
+        </tbody></table> : <p className="muted">Tragen Sie Ihren geplanten Netto-Stundensatz ein, um ihn mit dem erforderlichen Satz zu vergleichen.</p>}
+        {r.geplant > 0 && <p className={ok ? 'pos' : 'neg'}><b>{ok ? 'Ihr geplanter Satz deckt die Kosten.' : r.auslastungNoetig > 1 ? 'Der geplante Satz reicht auch bei voller Auslastung nicht – Preis oder Kosten prüfen.' : 'Der geplante Satz reicht nur bei höherer Auslastung als angenommen.'}</b></p>}
+      </Card>
+    </div>
   </>;
 }
+const fmtNum1 = (v: number) => v.toLocaleString('de-DE', { maximumFractionDigits: 1 });
 
 // ---------------- 12 Soll-Ist ----------------
 export function SollIstStep({ plan, e, upd }: StepProps) {

@@ -1,5 +1,6 @@
 import type { Plan } from '../model/types';
 import { leererPlan, SCHEMA_VERSION, PARAMS_2026 } from '../model/defaults';
+import { standErgaenzen } from '../model/schritte';
 
 const KEY = 'thex-finanzplan:v1';
 
@@ -16,11 +17,18 @@ export function migriere(raw: any): Plan {
   p.eigenmittel = { ...basis.eigenmittel, ...(raw.eigenmittel || {}) };
   p.liquiditaet = { ...basis.liquiditaet, ...(raw.liquiditaet || {}) };
   p.stundensatz = { ...basis.stundensatz, ...(raw.stundensatz || {}) };
+  // v1.0 → v1.1: „Auslastungsausfall“ wird zur Auslastungsquote
+  if (raw.stundensatz && raw.stundensatz.auslastung === undefined && typeof raw.stundensatz.ausfall === 'number') p.stundensatz.auslastung = 1 - raw.stundensatz.ausfall;
+  delete (p.stundensatz as any).ausfall;
+  if (!Array.isArray(p.stundensatz.stundenFelder)) p.stundensatz.stundenFelder = [];
+  p.meta.erledigt = { ...(p.meta.erledigt || {}) };
+  p.meta.stand = { ...(p.meta.stand || {}) };
   p.sollIst = { ...basis.sollIst, ...(raw.sollIst || {}) };
   p.pruefung = { ...basis.pruefung, ...(raw.pruefung || {}) };
   if (!Array.isArray(p.darlehen) || p.darlehen.length === 0) p.darlehen = basis.darlehen;
   if (!Array.isArray(p.gruender) || p.gruender.length === 0) p.gruender = basis.gruender;
   p.schemaVersion = SCHEMA_VERSION;
+  standErgaenzen(p);
   return p;
 }
 

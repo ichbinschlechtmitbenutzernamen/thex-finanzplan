@@ -32,5 +32,6 @@ export function beispielPlan(): Plan {
   p.darlehen[0].betrag = 25000;
   p.eigenmittel.bar = 4000;
   p.liquiditaet.kaution = 1950;
+  p.stundensatz = { ...p.stundensatz, geplant: 55, stundenFelder: [f1.id] };
   return p;
 }

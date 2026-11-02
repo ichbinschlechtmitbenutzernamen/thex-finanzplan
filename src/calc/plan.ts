@@ -32,7 +32,19 @@ export function kontoAnalyse(anfang: number, monate: { ein: string; ende: number
   return { zeilen, avgAus: sum(gefuellt.map(z => z.aus)) / n, avgEin: sum(gefuellt.map(z => z.ein)) / n, anzahl: gefuellt.length };
 }
 
-export interface Warnung { schritt: string; text: string; schwer?: boolean }
+export interface Warnung { schritt: string; text: string; schwer?: boolean; /** Plausibilitätshinweis (nicht blockierend) */ plausi?: boolean; /** Fehler: blockiert Abschluss/Bestätigung, Plan nicht einreichungsfähig */ fehler?: boolean }
+
+/** Schwellenwerte der Plausibilitätsprüfung (Orientierung, keine Vorgaben der TAB) */
+export const PLAUSI = {
+  privatMinimum: 1000,      // €/Monat private Kosten ohne KV/RV/ESt
+  vollerStartQuote: 0.9,    // Umsatz Monat 1 ≥ 90 % des Ø Monat 10–12 → keine Anlaufphase
+  umsatzsprung: 1.0,        // Umsatz J2 mehr als +100 % ggü. J1
+  umsatzRueckgang: -0.2,    // Umsatz J2 mehr als −20 % ggü. J1
+  zinsMax: 0.15,
+  hebesatzMin: 2.0, hebesatzMax: 9.0,
+};
+const FAHRZEUG = /(fahrzeug|\bkfz|pkw|lkw|transporter|kleinbus|\bauto\b|automobil|kombi|wohnmobil|anhänger|lieferwagen|motorrad|roller)/i;
+const KFZKOSTEN = /(kfz|fahrzeug|treibstoff|benzin|diesel|tank|laden|leasing|auto)/i;
 
 export function berechne(plan: Plan) {
   const p = plan.params;
@@ -227,7 +239,9 @@ export function berechne(plan: Plan) {
   // Warnungen
   if (sum(umsatz, 0, 12) <= 0) warnungen.push({ schritt: 'umsatz', text: 'Umsatz im Plan-Jahr 1 ist 0 €.' });
   plan.umsatz.felder.forEach(f => { if (f.materialQuote > 0.8) warnungen.push({ schritt: 'umsatz', text: `${f.name}: Materialquote über 80 %.` }); });
-  if (kumuliert[tiefpunktIdx] < 0) warnungen.push({ schritt: 'liquiditaet', text: `Liquidität wird negativ: tiefster Stand ${Math.round(kumuliert[tiefpunktIdx]).toLocaleString('de-DE')} € im ${labels[tiefpunktIdx]}.`, schwer: true });
+  const negMonate = kumuliert.map((x, i) => (x < -0.005 ? i : -1)).filter(i => i >= 0);
+  const liqFehler = liquiditaetsFehlerText(negMonate, kumuliert, labels, tiefpunktIdx);
+  if (liqFehler) warnungen.push({ schritt: 'liquiditaet', text: liqFehler, schwer: true, fehler: true });
   const md = plan.darlehen[0];
   if (md && md.betrag > 0 && (md.betrag < 5000 || md.betrag > 35000) && !plan.einstellungen.folgedarlehen) warnungen.push({ schritt: 'darlehen', text: 'Mikrodarlehen: zulässig sind 5.000 € bis 35.000 €.' });
   if (md && plan.einstellungen.folgedarlehen && md.betrag > 45000) warnungen.push({ schritt: 'darlehen', text: 'Mikrodarlehen inkl. Folgedarlehen: max. 45.000 € gesamt.' });
@@ -236,6 +250,52 @@ export function berechne(plan: Plan) {
   if (rf === 'GBR' && Math.abs(anteilSumme - 100) > 0.01) warnungen.push({ schritt: 'projekt', text: `Gewinnanteile der Gesellschafter ergeben ${anteilSumme} % statt 100 %.` });
   gruender.forEach(g => { const k = privatKostenMonat(g, 0); if (k > 0 && k < 1000 && !(g.einnahmen[0] > 0)) warnungen.push({ schritt: 'privat', text: `${g.name}: private Kosten unter 1.000 €/Monat ohne weitere Einnahmen – bitte prüfen.` }); });
   tragfaehigkeit.forEach(t => { if (t.netto < t.bedarf) warnungen.push({ schritt: 'ergebnis', text: `${t.name}: Netto-GF-Gehalt + Ausschüttung (${Math.round(t.netto)} €) decken private Kosten Jahr 2 (${Math.round(t.bedarf)} €) nicht.` }); });
+
+  // ---- Plausibilität (v1.1, nicht blockierend) ----
+  const eur = (v: number) => `${Math.round(v).toLocaleString('de-DE')} €`;
+  const pl = (schritt: string, text: string, schwer = false) => warnungen.push({ schritt, text, plausi: true, schwer });
+  const u1 = sum(umsatz, 0, 12), u2 = sum(umsatz, 12, 24);
+  // volle Umsätze ab Monat 1
+  const avgSpaet = sum(umsatz, 9, 12) / 3;
+  if (umsatz[0] > 0 && avgSpaet > 0 && umsatz[0] >= PLAUSI.vollerStartQuote * avgSpaet) pl('umsatz', `Umsatz bereits in Monat 1 (${eur(umsatz[0])}) auf vollem Niveau (Ø Monat 10–12: ${eur(avgSpaet)}). Ist eine Anlaufphase eingeplant (Anlauffaktor < 100 %)?`);
+  // Umsatzsprung J1 → J2
+  if (u1 > 0 && u2 / u1 - 1 > PLAUSI.umsatzsprung) pl('umsatz', `Umsatz steigt von Jahr 1 auf Jahr 2 um ${Math.round((u2 / u1 - 1) * 100)} % (${eur(u1)} → ${eur(u2)}). Bitte begründen Sie den Sprung (z. B. Kapazität, Aufträge).`);
+  if (u1 > 0 && u2 / u1 - 1 < PLAUSI.umsatzRueckgang) pl('umsatz', `Umsatz sinkt von Jahr 1 auf Jahr 2 um ${Math.round((1 - u2 / u1) * 100)} %. Ist das gewollt?`);
+  // Null- und unplausible Werte im Umsatz
+  plan.umsatz.felder.forEach(f => {
+    const preis = f.preis.slice(0, 24).some(x => x > 0), menge = f.menge.slice(0, 24).some(x => x > 0);
+    if (preis && !menge) pl('umsatz', `${f.name || 'Geschäftsfeld'}: Preis eingetragen, aber keine Mengen geplant.`);
+    if (!preis && menge) pl('umsatz', `${f.name || 'Geschäftsfeld'}: Mengen eingetragen, aber kein Preis.`);
+  });
+  if (plan.umsatz.faktor.some(x => x > 1.5)) pl('umsatz', 'Ein Anlauf-/Saisonfaktor liegt über 150 % – bitte prüfen (100 % = volles Niveau).');
+  // Privatentnahme / private Kosten
+  if (!kapg) privat.forEach(({ g, bedarf, einnahmen: ein, gz: gzA }) => {
+    const k1 = privatKostenMonat(g, 0), k2 = privatKostenMonat(g, 1), k3 = privatKostenMonat(g, 2);
+    if (k1 > 0 && k1 < PLAUSI.privatMinimum && (g.einnahmen[0] || 0) > 0) pl('privat', `${g.name}: private Kosten ${eur(k1)}/Monat liegen unter dem Orientierungswert von ${eur(PLAUSI.privatMinimum)} – bitte prüfen, ob alle Lebenshaltungskosten erfasst sind.`);
+    if (k1 > 0 && (k2 === 0 || k3 === 0)) pl('privat', `${g.name}: private Kosten für Jahr ${k2 === 0 ? 2 : 3} fehlen (0 €). Tipp: „Jahr 1 → 2/3 übernehmen“.`);
+    const entn1 = sum(bedarf, 0, 12) - sum(ein, 0, 12) - sum(gzA, 0, 12);
+    if (k1 > 0 && entn1 < k1 * 12 * 0.5) pl('privat', `${g.name}: Die Privatentnahme Jahr 1 (${eur(Math.max(0, entn1))}) deckt weniger als die Hälfte der privaten Kosten (${eur(k1 * 12)}), weil private Einnahmen sie größtenteils tragen. Bitte die Einnahmen (Partner/in, Zuschüsse) belegen können.`);
+  });
+  // Fahrzeug ohne Kfz-Kosten
+  const fahrzeuge = plan.invest.filter(x => x.netto > 0 && FAHRZEUG.test(x.bez));
+  const kfzKosten = plan.kosten.posten.filter(k => KFZKOSTEN.test(k.bez)).reduce((s2, k) => s2 + sum(k.monate), 0);
+  if (fahrzeuge.length && !(kfzKosten > 0)) pl('kosten', `Fahrzeug geplant (${fahrzeuge.map(x => x.bez).join(', ')}), aber keine laufenden Kfz-Kosten (Steuer, Versicherung, Kraftstoff, Wartung).`);
+  // laufende Kosten
+  const kostenJ1 = sum(kosten, 0, 12);
+  if (u1 > 0 && kostenJ1 === 0) pl('kosten', 'Keine laufenden betrieblichen Kosten geplant – das ist sehr ungewöhnlich (z. B. Versicherung, Telefon, Steuerberatung).');
+  const kostenSumme = (re: RegExp) => plan.kosten.posten.filter(k => re.test(k.bez)).reduce((s2, k) => s2 + sum(k.monate), 0);
+  if (u1 > 0 && kostenJ1 > 0 && kostenSumme(/steuerberat|buchhalt/i) === 0) pl('kosten', 'Keine Kosten für Steuerberatung/Buchhaltung geplant. Bitte prüfen (Orientierung: ca. 100–250 €/Monat).');
+  if (u1 > 0 && kostenJ1 > 0 && kostenSumme(/versicher/i) === 0) pl('kosten', 'Keine betrieblichen Versicherungen geplant (z. B. Betriebshaftpflicht).');
+  plan.invest.forEach(x => { if (x.bez && !(x.netto > 0)) pl('invest', `Investition „${x.bez}“ ohne Betrag.`); if (!x.gwg && x.ndJahre > 0 && x.ndJahre < 1) pl('invest', `Investition „${x.bez || '–'}“: Nutzungsdauer unter 1 Jahr.`); });
+  // Finanzierung
+  const kbSumme = plan.invest.reduce((s2, x) => s2 + x.netto, 0) + [...plan.betriebskosten, ...plan.gruendungskosten].reduce((s2, x) => s2 + x.netto, 0);
+  const finSumme = plan.darlehen.filter(d => !d.bestehend).reduce((s2, d) => s2 + d.betrag, 0) + em.bar + em.privatdarlehen + em.sachzuschuss + em.sacheinlage;
+  if (kbSumme > 0 && finSumme < kbSumme - 0.5) pl('darlehen', `Finanzierungslücke: Kapitalbedarf ${eur(kbSumme)}, Finanzierung ${eur(finSumme)} (fehlen ${eur(kbSumme - finSumme)}).`, true);
+  plan.darlehen.forEach((d, i) => { if (d.betrag > 0 && (d.sollzins <= 0 || d.sollzins > PLAUSI.zinsMax)) pl('darlehen', `Darlehen ${i + 1}: Sollzins ${(d.sollzins * 100).toFixed(2).replace('.', ',')} % ist unplausibel.`); });
+  // Steuer-Parameter
+  if (rf !== 'FREI' && (p.hebesatz < PLAUSI.hebesatzMin || p.hebesatz > PLAUSI.hebesatzMax)) pl('steuern', `Gewerbesteuer-Hebesatz ${Math.round(p.hebesatz * 100)} % ist unplausibel (gesetzliches Minimum 200 %).`);
+  // KD gelb
+  if (ampel === 'gelb') pl('ergebnis', `KD-Auslastung ${(auslastung * 100).toFixed(1).replace('.', ',')} % liegt in der gelben Zone (über ${(p.kdGelb * 100).toFixed(0)} %) – wenig Reserve für Planabweichungen.`);
 
   const jahre = [1, 2, 3].map(j => ({
     umsatz: jahr(umsatz, j), zuschuesse: jahr(zuschuesse, j), betriebsertrag: jahr(betriebsertrag, j), material: jahr(material, j), personal: jahr(personal, j), afa: jahr(afa, j),
@@ -254,30 +314,91 @@ export function berechne(plan: Plan) {
     labels, umsatzGF, umsatz, umsatzBrutto, ustUmsatz, material, personal, afa, einmal, kosten, zinsen, tilgung, zuschuesse, aoErtrag, aoAufwand,
     betriebsertrag, aufwand, betriebsergebnis, ergebnisVorSteuern, jahre, steuerJahre,
     ust: { ust: ustUmsatz, vst, zahllast, zahlung: ustZahlung },
-    liq: { einz, ausz, summeEin, summeAus, saldo, kumuliert, kumuliertOhneGZ, tiefpunktIdx, tiefpunkt: kumuliert[tiefpunktIdx] },
+    liq: { einz, ausz, summeEin, summeAus, saldo, kumuliert, kumuliertOhneGZ, tiefpunktIdx, tiefpunkt: kumuliert[tiefpunktIdx], negMonate },
     privat, privatentnahme, darlehen: darlehen.map(x => ({ d: x.d, plan: x.plan as Tilgungszeile[] })), kd, warnungen,
     kapitalbedarf: { ...kapitalbedarf, summe: kapitalbedarf.invest + kapitalbedarf.betriebskosten + kapitalbedarf.gruendungskosten }, finanzierung,
   };
 }
 export type Ergebnis = ReturnType<typeof berechne>;
 
-/** Stundensatz (optional, Spec 5.15) */
+/**
+ * Stundensatz rückwärts (v1.1): Was muss eine fakturierbare Stunde netto bringen?
+ * Zu decken p. a. = private Kosten + KV/PV/RV + ESt (Plan) − private Einnahmen/Zuschüsse
+ *                 + betriebliche Kosten (Personal, sonstige, einmalige; ohne Material) + Kapitaldienst + betriebliche Steuern + Gewinnaufschlag
+ *                 − Rohertrag der Geschäftsfelder, die nicht nach Stunden abgerechnet werden
+ * Fakturierbare Stunden = (Arbeitstage − Urlaub − Krankheit − Feiertage) × (Stunden/Tag − unproduktiv) × Auslastungsquote
+ */
 export function stundensatz(plan: Plan, e: Ergebnis) {
-  const s = plan.stundensatz, j = s.jahr;
-  const privat = plan.einstellungen.rechtsform === 'KAPG'
-    ? plan.gruender.reduce((a, g) => a + (g.gfGehalt[j - 1] || 0) * 12, 0)
-    : e.privat.reduce((a, x) => a + jahr(x.bedarf, j), 0);
-  const betrieb = jahr(e.personal, j) + jahr(e.kosten, j) + jahr(e.einmal, j) + (plan.einstellungen.rechtsform === 'KAPG' ? -plan.gruender.reduce((a, g) => a + (g.gfGehalt[j - 1] || 0) * 12, 0) : 0);
+  const s = plan.stundensatz, j = s.jahr, j0 = j - 1;
+  const kapg = plan.einstellungen.rechtsform === 'KAPG';
+  const gfGehalt = plan.gruender.reduce((a, g) => a + (g.gfGehalt[j0] || 0) * 12, 0);
+  const st = e.steuerJahre[j0];
+  const privatKosten = kapg ? 0 : plan.gruender.reduce((a, g) => a + privatKostenMonat(g, j0) * 12, 0);
+  const sv = kapg ? 0 : st.personen.reduce((a, x) => a + (x?.sv || 0), 0);
+  const est = kapg ? 0 : st.personen.reduce((a, x) => a + (x?.steuer || 0), 0);
+  const einnahmen = kapg ? 0 : e.privat.reduce((a, x) => a + jahr(x.einnahmen, j) + jahr(x.gz, j), 0);
+  // KapG: GF-Gehalt steckt im Personalaufwand (= Privatbedarf der Gesellschafter)
+  const betrieb = jahr(e.personal, j) + jahr(e.kosten, j) + jahr(e.einmal, j);
   const kapitaldienst = jahr(e.zinsen, j) + jahr(e.tilgung, j);
-  const basis = privat + betrieb + kapitaldienst + e.steuerJahre[j - 1].betrieblich + s.gewinnaufschlag;
+  const steuern = st.betrieblich;
+  const ausschuettung = kapg ? plan.gruender.reduce((a, g) => a + (g.ausschuettung[j0] || 0), 0) : 0;
+  const felder = plan.umsatz.felder;
+  const stundenIds = s.stundenFelder.filter(id => felder.some(f => f.id === id));
+  const andere = stundenIds.length ? felder.map((f, i) => ({ f, i })).filter(x => !stundenIds.includes(x.f.id)) : [];
+  const rohertragAndere = andere.reduce((a, x) => a + jahr(e.umsatzGF[x.i], j) * (1 - (x.f.materialQuote || 0)), 0);
+  const privat = privatKosten + sv + est; // Summe privat inkl. Abgaben
+  const basis = Math.max(0, privatKosten + sv + est - einnahmen + betrieb + kapitaldienst + steuern + ausschuettung + s.gewinnaufschlag - rohertragAndere);
   const tage = Math.max(0, s.arbeitstage - s.urlaub - s.krankheit - s.feiertage);
   const hTag = Math.max(0, s.stundenTag - s.unproduktiv);
-  const stunden = tage * hTag * (1 - s.ausfall);
+  const produktiv = tage * hTag;
+  const stunden = produktiv * Math.max(0, Math.min(1, s.auslastung));
   const satz = stunden > 0 ? basis / stunden : 0;
-  return { privat, betrieb, kapitaldienst, steuern: e.steuerJahre[j - 1].betrieblich, gewinnaufschlag: s.gewinnaufschlag, basis, tage, hTag, stunden, satz, tagessatz: satz * hTag };
+  const geplant = s.geplant || 0;
+  const deckung = satz > 0 && geplant > 0 ? geplant / satz : NaN;
+  const stundenNoetig = geplant > 0 ? basis / geplant : NaN; // fakturierbare Stunden bei geplantem Satz
+  const auslastungNoetig = geplant > 0 && produktiv > 0 ? stundenNoetig / produktiv : NaN;
+  return {
+    privatKosten, sv, est, einnahmen, privat, gfGehalt, betrieb, kapitaldienst, steuern, ausschuettung, gewinnaufschlag: s.gewinnaufschlag,
+    rohertragAndere, andereFelder: andere.map(x => x.f.name), basis, tage, hTag, produktiv, stunden, satz, tagessatz: satz * hTag,
+    geplant, deckung, differenz: geplant > 0 ? geplant - satz : NaN, stundenNoetig, auslastungNoetig,
+  };
+}
+
+/** Szenario (v1.1): Umsatz und Kosten prozentual verändern, ohne die Eingaben zu überschreiben */
+export interface Szenario { umsatz: number; kosten: number }
+export function szenarioPlan(plan: Plan, sz: Szenario): Plan {
+  const p: Plan = structuredClone(plan);
+  const fu = 1 + sz.umsatz, fk = 1 + sz.kosten;
+  p.umsatz.felder.forEach(f => { f.menge = f.menge.map(x => x * fu); });
+  p.kosten.posten.forEach(k => { k.monate = k.monate.map(x => x * fk); });
+  p.personal.forEach(st => { st.brutto *= fk; });
+  p.kosten.aoAufwand.forEach(z => { z.betrag *= fk; });
+  return p;
+}
+export function szenario(plan: Plan, sz: Szenario) {
+  const e = berechne(szenarioPlan(plan, sz));
+  return { e, kdAuslastung: e.kd.auslastung, ampel: e.kd.ampel, liqMin: e.liq.tiefpunkt, liqMinMonat: e.labels[e.liq.tiefpunktIdx], liqNegMonate: e.liq.negMonate.length, liqFehler: e.liq.negMonate.length > 0, be: e.jahre.map(x => x.betriebsergebnis), grenze: e.kd.grenze };
+}
+/** Größter Umsatzrückgang (bei unveränderten Kosten), bei dem die KD-Ampel noch nicht rot ist; null = schon im Basisfall rot */
+export function umsatzPuffer(plan: Plan, kosten = 0): number | null {
+  const ok = (u: number) => szenario(plan, { umsatz: u, kosten }).ampel !== 'rot';
+  if (!ok(0)) return null;
+  let lo = 0, hi = -1; // lo ok, hi (−100 %) i. d. R. nicht ok
+  if (ok(hi)) return -1;
+  for (let i = 0; i < 30; i++) { const mid = (lo + hi) / 2; if (ok(mid)) lo = mid; else hi = mid; }
+  return lo;
 }
 
 export function sollIstZeilen(e: Ergebnis): [string, string, number[]][] {
   return [['umsatz', 'Umsatz', e.umsatz], ['zuschuesse', 'Zuschüsse', e.zuschuesse], ['material', 'Material', e.material], ['personal', 'Personal', e.personal], ['afa', 'Abschreibungen', e.afa], ['zinsen', 'Zinsen', e.zinsen], ['kosten', 'Sonstige Kosten (inkl. einmalig)', e.kosten.map((x, i) => x + e.einmal[i])], ['betriebsergebnis', 'Betriebsergebnis', e.betriebsergebnis]];
 }
 
+
+/** Fehlertext bei negativer Liquidität (null, wenn alle 36 Monate ≥ 0 €) */
+export function liquiditaetsFehlerText(negMonate: number[], kumuliert: number[], labels: string[], tiefpunktIdx: number): string | null {
+  if (!negMonate.length) return null;
+  const tief = `${Math.round(kumuliert[tiefpunktIdx]).toLocaleString('de-DE')} €`;
+  return `Liquidität negativ in ${negMonate.length} von 36 Monaten (erster: ${labels[negMonate[0]]}, Tiefpunkt ${tief} im ${labels[tiefpunktIdx]}). Ein Plan mit negativer Liquidität ist nicht einreichungsfähig – bitte Finanzierung, Eigenmittel, Kosten, Entnahmen oder Zeitpunkte anpassen.`;
+}
+/** Fehler (blockierend) aus einem Ergebnis */
+export const planFehler = (e: { warnungen: Warnung[] }) => e.warnungen.filter(w => w.fehler);

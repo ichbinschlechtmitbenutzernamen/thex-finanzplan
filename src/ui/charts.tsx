@@ -66,7 +66,7 @@ export function BarChart({ groups, series, title }: { groups: string[]; series: 
 }
 
 export function StackBar({ items, title }: { items: { name: string; value: number }[]; title: string }) {
-  const farben = ['#154c79', '#2a7ab0', '#5aa6d6', '#8cc4e8', '#e0a526', '#c97b2a', '#7a8a99', '#a3b1bf'];
+  const farben = ['#005274', '#0089c1', '#5aa6d6', '#8cc4e8', '#f18c00', '#c97b2a', '#7a8a99', '#a3b1bf'];
   const total = items.reduce((s, i) => s + i.value, 0) || 1;
   return (
     <figure className="chart" aria-label={title}>

@@ -52,3 +52,8 @@ Danach wurde die Kopie mit LibreOffice headless neu berechnet und verglichen. Di
 ## Nicht abgeglichen
 * Liquiditätsplan und USt-Zahllast im Monatsdetail. Die Vorlage hat dort die bekannten Fehler (USt-Zeile D6, 19 % pauschal, Darlehen immer Monat 1), deshalb ist ein 1:1-Vergleich nicht aussagekräftig.
 * Personal: Das Beispiel hat kein Personal. Den AG-Anteil decken Unit-Tests ab (21,5 % statt 22 % fest in der Vorlage).
+
+## Ergänzungen in v1.1
+* **Stundensatz:** Die Vorlage setzt AfA an. Die App setzt für die Liquiditätssicht die Tilgung an und berücksichtigt die Auslastung. Die Planwerte sind deshalb nicht 1:1 mit der Vorlage vergleichbar.
+* **Plausibilitätsschwellen und Orientierungswerte** stammen nicht aus der Vorlage. Es sind eigene, unverbindliche Annahmen, die fachlich bestätigt werden müssen.
+* **Szenarien** gibt es in der Vorlage nicht.

@@ -149,7 +149,7 @@ describe('Gesamtplan / KD', () => {
 describe('Hilfsfunktionen', () => {
   it('Haushaltsbuch-Summe aus Text', () => { expect(summeAusText('100+50,5+20')).toBeCloseTo(170.5); expect(summeAusText('=1.200+300')).toBe(1500); expect(summeAusText('')).toBe(0); });
   it('Kontoauszugsanalyse', () => { const a = kontoAnalyse(1000, [{ ein: '2000', ende: 1200 }, { ein: '2000', ende: 1000 }]); expect(a.zeilen[0].aus).toBe(1800); expect(a.zeilen[1].aus).toBe(2200); expect(a.avgAus).toBe(2000); });
-  it('Stundensatz positiv', () => { const pl = beispielPlan(); const s = stundensatz(pl, berechne(pl)); expect(s.stunden).toBeCloseTo((260 - 24 - 5 - 10) * 6 * 0.95, 6); expect(s.satz).toBeGreaterThan(0); });
+  it('Stundensatz positiv', () => { const pl = beispielPlan(); const s = stundensatz(pl, berechne(pl)); expect(s.stunden).toBeCloseTo((260 - 24 - 5 - 10) * 6 * 0.8, 6); expect(s.satz).toBeGreaterThan(0); });
 });
 
 describe('Excel Export → Import (Round-Trip)', () => {

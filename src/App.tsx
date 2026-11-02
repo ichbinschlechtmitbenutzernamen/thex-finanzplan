@@ -5,75 +5,28 @@ import { laden, speichern } from './io/storage';
 import type { ImportErgebnis } from './io/excel';
 import { leererPlan } from './model/defaults';
 import { beispielPlan } from './model/beispiel';
-import { fmtEUR } from './ui/fields';
+import { fmtEUR, StepHinweise, FehlerBox } from './ui/fields';
+import { STEPS, fehler, freigeschaltet, bestaetige, bittePruefen, ergebnisStatus, standErgaenzen, stepById } from './model/schritte';
+import { SzenarienStep } from './ui/szenarien';
+import { APP_VERSION } from './version';
 import * as S from './ui/steps';
 import { Dashboard } from './ui/dashboard';
 import { Tutorial } from './ui/tutorial';
 
-interface StepDef { id: string; nr: string; titel: string; nach: string[]; art: 'pflicht' | 'optional' | 'ergebnis'; sichtbar?: (p: Plan) => boolean; abschliessbar?: boolean }
-export const STEPS: StepDef[] = [
-  { id: 'start', nr: '0', titel: 'Start & Einstellungen', nach: [], art: 'pflicht' },
-  { id: 'projekt', nr: '1', titel: 'Projektdaten', nach: ['start'], art: 'pflicht' },
-  { id: 'privat', nr: '2', titel: 'Private Kosten', nach: ['projekt'], art: 'pflicht' },
-  { id: 'haushaltsbuch', nr: '2a', titel: 'Haushaltsbuch', nach: ['projekt'], art: 'optional' },
-  { id: 'umsatz', nr: '3', titel: 'Umsatzplanung', nach: ['privat'], art: 'pflicht' },
-  { id: 'personal', nr: '4', titel: 'Personal', nach: ['umsatz'], art: 'pflicht' },
-  { id: 'invest', nr: '5', titel: 'Kapitalbedarf', nach: ['personal'], art: 'pflicht' },
-  { id: 'kosten', nr: '6', titel: 'Betriebliche Kosten', nach: ['invest'], art: 'pflicht' },
-  { id: 'darlehen', nr: '7', titel: 'Finanzierung & Darlehen', nach: ['kosten'], art: 'pflicht' },
-  { id: 'liquiditaet', nr: '8', titel: 'Liquidität & Eigenmittel', nach: ['darlehen'], art: 'pflicht' },
-  { id: 'steuern', nr: '9', titel: 'Steuern & Abgaben', nach: ['liquiditaet'], art: 'pflicht' },
-  { id: 'ergebnis', nr: '10', titel: 'Ergebnis & KD-Prüfung', nach: ['steuern'], art: 'ergebnis' },
-  { id: 'stundensatz', nr: '11', titel: 'Stundensatz', nach: ['privat'], art: 'optional' },
-  { id: 'sollist', nr: '12', titel: 'Soll-Ist', nach: ['steuern'], art: 'optional', sichtbar: p => p.einstellungen.folgedarlehen },
-  { id: 'pruefung', nr: 'P', titel: 'Prüfung (Kontoauszüge)', nach: ['privat'], art: 'optional', sichtbar: p => p.meta.pruefer },
-];
-
-/** Pflichtprüfung je Schritt: Fehler blockieren das Abschließen */
-export function fehler(id: string, p: Plan): string[] {
-  const f: string[] = [];
-  const rf = p.einstellungen.rechtsform;
-  switch (id) {
-    case 'start': if (!p.meta.haftungBestaetigt) f.push('Bitte bestätigen Sie die Hinweise.'); break;
-    case 'projekt':
-      if (!p.projekt.name.trim()) f.push('Projekt- bzw. Firmenname fehlt.');
-      if (!/^\d{4}-\d{2}$/.test(p.projekt.gruendungsmonat)) f.push('Gründungsmonat fehlt.');
-      if (p.gruender.some(g => !g.name.trim())) f.push('Bitte alle Namen eintragen.');
-      if (rf === 'GBR' && p.gruender.length < 2) f.push('Eine GbR braucht mindestens zwei Gesellschafter/innen.');
-      if (rf === 'GBR' && Math.abs(p.gruender.reduce((s, g) => s + g.anteil, 0) - 100) > 0.01) f.push('Gewinnanteile müssen zusammen 100 % ergeben.');
-      break;
-    case 'privat': p.gruender.forEach(g => { if (!(privatKostenMonat(g, 0) > 0)) f.push(`${g.name}: private Kosten für Jahr 1 fehlen.`); if (g.kv === 'privat' && !(g.kvPrivatMonat > 0)) f.push(`${g.name}: PKV-Beitrag fehlt.`); }); break;
-    case 'umsatz': if (!(jahr(berechne(p).umsatz, 1) > 0)) f.push('Bitte planen Sie Umsätze für Jahr 1.'); if (p.umsatz.felder.some(x => x.materialQuote < 0 || x.materialQuote > 1)) f.push('Materialquote muss zwischen 0 und 100 % liegen.'); break;
-    case 'personal': p.personal.forEach(s => { if (s.von > s.bis) f.push(`${s.bez || 'Stelle'}: „von“ liegt nach „bis“.`); }); break;
-    case 'invest': p.invest.forEach(x => { if (x.netto > 0 && !x.gwg && !(x.ndJahre > 0)) f.push(`${x.bez || 'Investition'}: Nutzungsdauer fehlt.`); }); break;
-    case 'darlehen': {
-      const d = p.darlehen[0];
-      const max = p.einstellungen.folgedarlehen ? 45000 : 35000;
-      if (!(d.betrag >= 5000 && d.betrag <= max)) f.push(`Mikrodarlehen: Betrag zwischen 5.000 € und ${max.toLocaleString('de-DE')} € eintragen.`);
-      if (d.laufzeit > 84) f.push('Mikrodarlehen: Laufzeit höchstens 84 Monate.');
-      if (d.tilgungsfrei > 12) f.push('Mikrodarlehen: höchstens 12 tilgungsfreie Monate.');
-      p.darlehen.forEach((x, i) => { if (x.betrag > 0 && x.laufzeit <= x.tilgungsfrei) f.push(`Darlehen ${i + 1}: Laufzeit muss größer als die tilgungsfreie Zeit sein.`); });
-      break;
-    }
-  }
-  return f;
-}
-
-export function freigeschaltet(id: string, p: Plan, seen = new Set<string>()): boolean {
-  const s = STEPS.find(x => x.id === id)!;
-  if (seen.has(id)) return false; seen.add(id);
-  return s.nach.every(n => p.meta.erledigt[n] && freigeschaltet(n, p, seen));
-}
+export { STEPS, fehler, freigeschaltet };
 
 export default function App() {
   const [plan, setPlan] = useState<Plan>(() => laden());
-  const [aktiv, setAktiv] = useState<string>(() => (laden().meta.haftungBestaetigt ? 'projekt' : 'start'));
+  const [aktiv, setAktivRoh] = useState<string>(() => (laden().meta.haftungBestaetigt ? 'projekt' : 'start'));
+  const setAktiv = (id: string) => setAktivRoh(id);
   const [tutorial, setTutorial] = useState<boolean>(() => !laden().meta.tutorialGesehen);
   const [importDlg, setImportDlg] = useState<ImportErgebnis | null>(null);
   const [toast, setToast] = useState<string>('');
   const [fehlerAnz, setFehlerAnz] = useState<string[]>([]);
   const fileRef = useRef<HTMLInputElement>(null);
   const e = useMemo(() => berechne(plan), [plan]);
+  const pruefen = useMemo(() => bittePruefen(plan), [plan]);
+  const status = useMemo(() => ergebnisStatus(plan, pruefen), [plan, pruefen]);
 
   useEffect(() => { speichern(plan); }, [plan]);
   useEffect(() => { if (toast) { const t = setTimeout(() => setToast(''), 3500); return () => clearTimeout(t); } }, [toast]);
@@ -88,11 +41,24 @@ export default function App() {
     const f = fehler(step.id, plan);
     if (f.length) { setFehlerAnz(f); return; }
     setFehlerAnz([]);
-    upd(p => { p.meta.erledigt[step.id] = true; if (step.id === 'start') p.meta.tutorialGesehen = true; });
+    upd(p => { p.meta.erledigt[step.id] = true; bestaetige(step.id, p); if (step.id === 'start') p.meta.tutorialGesehen = true; });
     const idx = sichtbar.findIndex(s => s.id === step.id);
     const naechster = sichtbar.slice(idx + 1).find(s => s.art !== 'optional') ?? sichtbar[idx + 1];
     if (naechster) setAktiv(naechster.id);
-    setToast(`Schritt „${step.titel}“ abgeschlossen.`);
+    setToast(pruefen[step.id] ? `Schritt „${step.titel}“ geprüft und bestätigt.` : `Schritt „${step.titel}“ abgeschlossen.`);
+  };
+  const ergebnisBestaetigen = () => upd(p => { p.meta.bestaetigtAm = new Date().toISOString(); bestaetige('ergebnis', p); });
+
+  const pdfErstellen = async () => {
+    try {
+      setToast('PDF wird erstellt …');
+      const { erstellePdf } = await import('./io/pdf');
+      const { blob, dateiname } = await erstellePdf(plan);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a'); a.href = url; a.download = dateiname; document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 2000);
+      setToast(`PDF „${dateiname}“ erstellt.`);
+    } catch (err) { setToast('PDF-Erstellung fehlgeschlagen: ' + (err as Error).message); }
   };
 
   const exportieren = async () => {
@@ -114,7 +80,7 @@ export default function App() {
   const props = { plan, e, upd };
   const inhalt = (() => {
     switch (step.id) {
-      case 'start': return <S.StartStep {...props} onTutorial={() => setTutorial(true)} onBeispiel={() => { if (confirm('Beispielprojekt laden? Ihre aktuellen Eingaben werden ersetzt (vorher ggf. exportieren).')) { const b = beispielPlan(); b.meta.tutorialGesehen = true; b.meta.haftungBestaetigt = true; setPlan(b); setFehlerAnz([]); setToast('Beispielprojekt „Muster Werkstatt“ geladen.'); } }} />;
+      case 'start': return <S.StartStep {...props} onTutorial={() => setTutorial(true)} onBeispiel={() => { if (confirm('Beispielprojekt laden? Ihre aktuellen Eingaben werden ersetzt (vorher ggf. exportieren).')) { const b = beispielPlan(); b.meta.tutorialGesehen = true; b.meta.haftungBestaetigt = true; standErgaenzen(b); setPlan(b); setFehlerAnz([]); setToast('Beispielprojekt „Muster Werkstatt“ geladen.'); } }} />;
       case 'projekt': return <S.ProjektStep {...props} />;
       case 'privat': return <S.PrivatStep {...props} />;
       case 'haushaltsbuch': return <S.HaushaltsbuchStep {...props} />;
@@ -125,7 +91,8 @@ export default function App() {
       case 'darlehen': return <S.DarlehenStep {...props} />;
       case 'liquiditaet': return <S.LiquiditaetStep {...props} />;
       case 'steuern': return <S.SteuernStep {...props} />;
-      case 'ergebnis': return <Dashboard plan={plan} e={e} gotoStep={setAktiv} />;
+      case 'ergebnis': return <Dashboard plan={plan} e={e} gotoStep={setAktiv} status={status} pruefen={pruefen} onBestaetigen={ergebnisBestaetigen} onPdf={pdfErstellen} />;
+      case 'szenarien': return <SzenarienStep plan={plan} e={e} />;
       case 'stundensatz': return <S.StundensatzStep {...props} />;
       case 'sollist': return <S.SollIstStep {...props} />;
       case 'pruefung': return <S.PruefungStep {...props} />;
@@ -137,15 +104,16 @@ export default function App() {
 
   return <div className="app">
     <header className="topbar">
-      <div className="brand"><span className="logo">ThEx</span><div><b>Finanzplan</b><small>Gründungs- und Finanzplanung · Mikrodarlehen Thüringen</small></div></div>
+      <div className="brand"><span className="wordmark" aria-label="ThEx Finanzplan"><b>ThEx</b> Finanzplan</span><small>Gründungs- und Finanzplanung · Mikrodarlehen Thüringen</small></div>
       <div className="proj">{plan.projekt.name || 'Neuer Plan'} <span className="muted">· {S.RECHTSFORMEN.find(r => r[0] === plan.einstellungen.rechtsform)?.[1]}</span></div>
       <div className="tools">
         <button className="btn ghost" onClick={() => setTutorial(true)}>Einführung</button>
         <button className="btn ghost" onClick={() => fileRef.current?.click()}>Excel importieren</button>
         <input ref={fileRef} type="file" accept=".xlsx" hidden data-testid="import-input" onChange={ev => ev.target.files?.[0] && importieren(ev.target.files[0])} />
         <button className="btn primary" onClick={exportieren}>Excel exportieren</button>
+        <button className="btn ghost" onClick={pdfErstellen} disabled={!offen('ergebnis')} title={offen('ergebnis') ? 'Zusammenfassung als PDF für die Thüringer Aufbaubank' : 'Verfügbar, sobald alle Pflichtschritte abgeschlossen sind'}>PDF für TAB</button>
         <details className="menu"><summary className="btn ghost">⋯</summary><div>
-          <button onClick={() => window.print()}>Drucken / PDF</button>
+          <button onClick={() => window.print()}>Bildschirmansicht drucken</button>
           <label className="check"><input type="checkbox" checked={plan.meta.pruefer} onChange={ev => upd(p => (p.meta.pruefer = ev.target.checked))} /> Prüfer-Ansicht</label>
           <button className="danger" onClick={() => { if (confirm('Alle Eingaben löschen und neu beginnen?')) { setPlan(leererPlan()); setAktiv('start'); setTutorial(true); } }}>Neuen Plan beginnen</button>
         </div></details>
@@ -158,27 +126,37 @@ export default function App() {
         <ol>{sichtbar.map(s => {
           const auf = offen(s.id), done = !!plan.meta.erledigt[s.id];
           const warn = auf && (e.warnungen.some(w => w.schritt === s.id) || (done && fehler(s.id, plan).length > 0));
-          const icon = !auf ? '🔒' : done ? '✓' : warn ? '!' : s.nr;
-          return <li key={s.id} className={`${s.id === step.id ? 'active' : ''} ${auf ? '' : 'locked'} ${done ? 'done' : ''} ${warn ? 'warn' : ''} ${s.art}`}>
-            <button onClick={() => setAktiv(s.id)} title={auf ? '' : 'Wird freigeschaltet, sobald die vorherigen Schritte abgeschlossen sind.'}><span className="ico">{icon}</span><span className="t">{s.titel}{s.art === 'optional' && <em> optional</em>}</span></button>
+          const pr = auf && !!pruefen[s.id];
+          const err = auf && e.warnungen.some(w => w.fehler && w.schritt === s.id);
+          const icon = !auf ? '🔒' : err ? '✕' : pr ? '↻' : done ? '✓' : warn ? '!' : s.nr;
+          return <li key={s.id} data-testid={`nav-${s.id}`} className={`${s.id === step.id ? 'active' : ''} ${auf ? '' : 'locked'} ${done ? 'done' : ''} ${warn ? 'warn' : ''} ${pr ? 'pruefen' : ''} ${err ? 'fehler' : ''} ${s.art}`}>
+            <button onClick={() => setAktiv(s.id)} title={!auf ? 'Wird freigeschaltet, sobald die vorherigen Schritte abgeschlossen sind.' : pr ? `Bitte prüfen: ${pruefen[s.id].map(x => stepById(x)?.titel).join(', ')} wurde geändert.` : ''}><span className="ico">{icon}</span><span className="t">{s.titel}{s.art === 'optional' && <em> optional</em>}{err ? <em className="fe"> Fehler</em> : pr && <em className="pr"> bitte prüfen</em>}</span></button>
           </li>;
         })}</ol>
         <div className="side-kd">
           <small>KD-Ampel</small>
-          <div className={`pill ${offen('ergebnis') ? e.kd.ampel : 'aus'}`}>{offen('ergebnis') ? (isFinite(e.kd.auslastung) ? `${(e.kd.auslastung * 100).toFixed(1).replace('.', ',')} %` : 'nicht gegeben') : '–'}</div>
-          <small className="muted">Liquidität min. {fmtEUR(e.liq.tiefpunkt)}</small>
+          <div className={`pill ${offen('ergebnis') ? e.kd.ampel : 'aus'} ${offen('ergebnis') && status.status !== 'bestaetigt' ? (status.status === 'veraltet' ? 'veraltet' : 'offen-st') : ''}`} data-testid="side-kd">{offen('ergebnis') ? (isFinite(e.kd.auslastung) ? `${(e.kd.auslastung * 100).toFixed(1).replace('.', ',')} %` : 'nicht gegeben') : '–'}</div>
+          {offen('ergebnis') && <small className={`kd-status ${status.status}`} data-testid="side-kd-status">{status.status === 'bestaetigt' ? '✓ bestätigt' : status.status === 'veraltet' ? '↻ nicht aktuell bestätigt' : 'noch nicht bestätigt'}</small>}
+          {status.fehler.length > 0 ? <small className="kd-status fehler" data-testid="side-liq-fehler">✕ Liquidität negativ ({fmtEUR(e.liq.tiefpunkt)}) – nicht einreichungsfähig</small> : <small className="muted">Liquidität min. {fmtEUR(e.liq.tiefpunkt)}</small>}
         </div>
       </nav>
       <main className="content">
-        <div className="step-head"><span className="nr">Schritt {step.nr}</span><h2>{step.titel}</h2>{plan.meta.erledigt[step.id] && <span className="badge ok">abgeschlossen</span>}</div>
+        <>
+        <div className="step-head"><span className="nr">Schritt {step.nr}</span><h2>{step.titel}</h2>{plan.meta.erledigt[step.id] && !pruefen[step.id] && <span className="badge ok">abgeschlossen</span>}{pruefen[step.id] && <span className="badge pruefen">bitte prüfen</span>}</div>
         {gesperrt ? <div className="locked-box"><div className="big">🔒</div><p>Dieser Schritt wird freigeschaltet, sobald Sie die vorherigen Schritte abgeschlossen haben:</p>
           <ul>{STEPS.filter(s => s.art === 'pflicht' && !plan.meta.erledigt[s.id]).slice(0, 3).map(s => <li key={s.id}><button className="btn link" onClick={() => setAktiv(s.id)}>{s.nr} {s.titel}</button></li>)}</ul></div>
-          : <>{inhalt}
-            {fehlerAnz.length > 0 && <div className="errors" role="alert"><b>Bitte noch ergänzen:</b><ul>{fehlerAnz.map(f => <li key={f}>{f}</li>)}</ul></div>}
+          : <>
+            {pruefen[step.id] && <div className="pruefen-box" role="status" data-testid="pruefen-box"><b>↻ Bitte prüfen:</b> Seit Sie diesen Schritt {step.id === 'ergebnis' ? 'bestätigt' : 'abgeschlossen'} haben, wurden frühere Angaben geändert: {pruefen[step.id].map((x, i) => <React.Fragment key={x}>{i > 0 && ', '}<button className="btn link" onClick={() => setAktiv(x)}>{stepById(x)?.nr} {stepById(x)?.titel}</button></React.Fragment>)}. Bitte kontrollieren Sie Ihre Angaben hier und bestätigen Sie {step.id === 'ergebnis' ? 'das Ergebnis erneut' : <>mit „Prüfen und weiter“</>}.</div>}
+            {step.id !== 'ergebnis' && <FehlerBox warnungen={e.warnungen} schritt={step.id} onGoto={setAktiv} />}
+            {step.id !== 'ergebnis' && <StepHinweise warnungen={e.warnungen} schritt={step.id} />}
+            {inhalt}
+            {fehlerAnz.length > 0 && <div className="errors" role="alert"><b>Bitte noch ergänzen bzw. korrigieren:</b><ul>{fehlerAnz.map(f => <li key={f}>{f}</li>)}</ul></div>}
             <div className="step-foot">
               {step.art !== 'ergebnis' && <button className="btn primary" onClick={abschliessen}>{step.art === 'optional' ? 'Fertig' : plan.meta.erledigt[step.id] ? 'Prüfen und weiter' : 'Schritt abschließen'} →</button>}
-              {step.art === 'ergebnis' && <button className="btn primary" onClick={exportieren}>Plan als Excel exportieren</button>}
+              {step.art === 'ergebnis' && <><button className="btn primary" onClick={exportieren}>Plan als Excel exportieren</button> <button className="btn ghost" onClick={pdfErstellen}>PDF für TAB</button></>}
             </div></>}
+        </>
+        <footer className="footer"><span>ThEx Finanzplan {APP_VERSION} · Rechenhilfe, keine Kreditentscheidung · Daten bleiben in Ihrem Browser</span></footer>
       </main>
     </div>
     {tutorial && <Tutorial onClose={() => { setTutorial(false); upd(p => (p.meta.tutorialGesehen = true)); }} />}
@@ -189,7 +167,7 @@ export default function App() {
         : <><p><b>{importDlg.aenderungen.length} Änderung(en)</b> in der Excel-Datei gefunden. Bitte prüfen und bestätigen:</p>
           <div className="scroll tall"><table className="tbl result"><thead><tr><th>Feld</th><th>bisher</th><th>neu</th></tr></thead><tbody>
             {importDlg.aenderungen.map(a => <tr key={a.path}><td>{a.label}</td><td>{String(a.alt ?? '')}</td><td><b>{String(a.neu)}</b></td></tr>)}</tbody></table></div></>}
-      <div className="row gap end"><button className="btn ghost" onClick={() => setImportDlg(null)}>Abbrechen</button><button className="btn primary" onClick={() => { setPlan(importDlg.plan); setImportDlg(null); setToast('Import übernommen.'); }}>Übernehmen</button></div>
+      <div className="row gap end"><button className="btn ghost" onClick={() => setImportDlg(null)}>Abbrechen</button><button className="btn primary" onClick={() => { const n = importDlg.plan; const anz = Object.keys(bittePruefen(n)).length; setPlan(n); setImportDlg(null); setToast(anz ? `Import übernommen – ${anz} Schritt(e) bitte prüfen.` : 'Import übernommen.'); }}>Übernehmen</button></div>
     </div></div>}
     {toast && <div className="toast" role="status">{toast}</div>}
   </div>;

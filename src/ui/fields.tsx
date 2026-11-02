@@ -1,4 +1,6 @@
 import React, { useEffect, useState } from 'react';
+import { hilfe, hilfeText, ORIENTIERUNG_LABEL } from '../model/hilfe';
+import type { Warnung } from '../calc/plan';
 
 export const fmtEUR = (v: number, d = 0) => (isFinite(v) ? (Math.abs(v) < 0.5 * Math.pow(10, -d) ? 0 : v).toLocaleString('de-DE', { minimumFractionDigits: d, maximumFractionDigits: d }) + ' €' : '–');
 export const fmtNum = (v: number, d = 2) => (isFinite(v) ? v.toLocaleString('de-DE', { maximumFractionDigits: d }) : '');
@@ -52,14 +54,43 @@ export function Tip({ text }: { text: string }) {
   return <span className="tip" tabIndex={0} aria-label={text} data-tip={text}>?</span>;
 }
 
-export function Field({ label, tip, children, hint }: { label: string; tip?: string; children: React.ReactNode; hint?: string }) {
+/** Hilfe aus der Vorlage (Schlüssel in src/model/hilfe.ts) als Tooltip; optional mit zusätzlichem Text */
+export function HTip({ k, extra }: { k: string; extra?: string }) {
+  const t = [extra, hilfeText(k)].filter(Boolean).join('\n\n');
+  return t ? <Tip text={t} /> : null;
+}
+/** Orientierungswert sichtbar am Feld (klar als unverbindlich gekennzeichnet) */
+export function Orient({ k }: { k: string }) {
+  const o = hilfe(k)?.orientierung;
+  return o ? <span className="orient" title={ORIENTIERUNG_LABEL}><i>Orientierung</i> {o}</span> : null;
+}
+
+export function Field({ label, tip, children, hint, h }: { label: string; tip?: string; children: React.ReactNode; hint?: string; h?: string }) {
+  const t = [tip, h ? hilfeText(h) : ''].filter(Boolean).join('\n\n');
   return (
     <div className="field">
-      <label>{label}{tip && <Tip text={tip} />}</label>
+      <label>{label}{t && <Tip text={t} />}</label>
       <div className="control">{children}</div>
       {hint && <div className="hint">{hint}</div>}
+      {h && <Orient k={h} />}
     </div>
   );
+}
+
+/** Plausibilitäts- und sonstige Hinweise eines Schritts (nicht blockierend) */
+export function StepHinweise({ warnungen, schritt }: { warnungen: Warnung[]; schritt: string }) {
+  const w = warnungen.filter(x => x.schritt === schritt && !x.fehler);
+  if (!w.length) return null;
+  return <div className="hinweise" role="note" data-testid={`hinweise-${schritt}`}><b>Hinweise zur Plausibilität ({w.length})</b> <span className="muted small">– blockieren nicht, sollten aber begründet werden können.</span>
+    <ul>{w.map((x, i) => <li key={i} className={x.schwer ? 'schwer' : ''}>{x.text}</li>)}</ul></div>;
+}
+
+/** Blockierende Fehler (z. B. negative Liquidität) – rot, oberhalb der Hinweise */
+export function FehlerBox({ warnungen, schritt, onGoto }: { warnungen: Warnung[]; schritt?: string; onGoto?: (id: string) => void }) {
+  const w = warnungen.filter(x => x.fehler && (!schritt || x.schritt === schritt));
+  if (!w.length) return null;
+  return <div className="fehler-box" role="alert" data-testid={`fehler-${schritt ?? 'plan'}`}><b>✕ Fehler – Plan nicht einreichungsfähig</b>
+    <ul>{w.map((x, i) => <li key={i}>{x.text}{onGoto && x.schritt !== schritt && <> <button className="btn link" onClick={() => onGoto(x.schritt)}>zum Schritt →</button></>}</li>)}</ul></div>;
 }
 
 export function Card({ title, children, actions, help }: { title?: React.ReactNode; children: React.ReactNode; actions?: React.ReactNode; help?: React.ReactNode }) {

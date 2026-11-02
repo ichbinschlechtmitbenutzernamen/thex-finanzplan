@@ -13,6 +13,7 @@ npm run build      # Produktionsbuild nach dist/
 npm run preview    # gebaute App unter http://localhost:4173/thex-finanzplan/
 node scripts/e2e.mjs   # Browser-Test inkl. Export/Import und Screenshots (Preview muss laufen)
 node scripts/e2e_v11.mjs   # Browser-Test v1.1: bitte prüfen, Hinweise, Szenarien, Stundensatz, PDF, Liquiditätsfehler
+node scripts/e2e_v12.mjs   # Browser-Test v1.2: Alles zurücksetzen (Dialog, Abbrechen, Sicherung, Reset)
 npx vite-node scripts/beispiel-pdf.ts ../beispiel_tab.pdf   # Beispiel-PDF für die TAB erzeugen
 ```
 
@@ -40,7 +41,7 @@ npx vite-node scripts/beispiel-pdf.ts ../beispiel_tab.pdf   # Beispiel-PDF für 
 ## Parameter jährlich aktualisieren
 Alle Steuer- und SV-Werte stehen in `src/model/defaults.ts` (`PARAMS_2026`), z. B. Tarifzonen, BBG, Beitragssätze und Hebesatz. Nach einer Änderung `npm test` ausführen. Einzelne Testwerte müssen dann eventuell angepasst werden.
 
-## Version 1.1 (Branch `v1.1`, noch nicht veröffentlicht)
+## Version 1.1
 * **„Bitte prüfen“:** Jeder abgeschlossene Schritt speichert eine Prüfsumme seiner Vorgängerdaten (`meta.stand`). Ändern sich frühere Angaben, werden Folgeschritte markiert. KD-Ampel und Dashboard zeigen dann „nicht aktuell bestätigt“, bis das Ergebnis erneut bestätigt wird (`src/model/schritte.ts`).
 * **Hilfe-Tooltips:** 48 Zellkommentare und die Textfelder aus 9 Blättern der Vorlage V107, ohne Autorennamen. Dazu kommen unverbindliche **Orientierungswerte** (`src/model/hilfe.ts`).
 * **Plausibilitätshinweise:** Sie blockieren nichts und erscheinen inline und auf dem Dashboard mit Sprunglinks. Geprüft werden:
@@ -70,3 +71,7 @@ Alle Steuer- und SV-Werte stehen in `src/model/defaults.ts` (`PARAMS_2026`), z. 
 
 ### Quelle der Farben (abgerufen am 02.11.2026)
 * Farben: https://thex.de/assets/css/style.css (#0089C1, #005274, #C9D30E, #1f384d, #f18c00). Das Logo wird nicht übernommen, die App nutzt nur eine Text-Wortmarke.
+
+## Version 1.2
+
+- **Alles zurücksetzen:** Button in der Seitenleiste (unten) und im Menü „⋯“. Ein Bestätigungsdialog erklärt, was gelöscht wird, und bietet „Vorher als Excel sichern“ an; der Fokus liegt auf „Abbrechen“. Beim Zurücksetzen werden alle Eingaben, erledigte Schritte, „bitte prüfen“-Markierungen und die Ergebnis-Bestätigung gelöscht, die Browserdaten entfernt; der Plan beginnt wieder bei Schritt 0 mit Einführung.

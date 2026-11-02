@@ -1,9 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import type { Plan } from './model/types';
 import { berechne, privatKostenMonat, jahr } from './calc/plan';
-import { laden, speichern } from './io/storage';
+import { laden, speichern, zuruecksetzen } from './io/storage';
 import type { ImportErgebnis } from './io/excel';
-import { leererPlan } from './model/defaults';
 import { beispielPlan } from './model/beispiel';
 import { fmtEUR, StepHinweise, FehlerBox } from './ui/fields';
 import { STEPS, fehler, freigeschaltet, bestaetige, bittePruefen, ergebnisStatus, standErgaenzen, stepById } from './model/schritte';
@@ -24,11 +23,15 @@ export default function App() {
   const [toast, setToast] = useState<string>('');
   const [fehlerAnz, setFehlerAnz] = useState<string[]>([]);
   const fileRef = useRef<HTMLInputElement>(null);
+  const [resetDlg, setResetDlg] = useState(false);
+  const [resetGesichert, setResetGesichert] = useState('');
+  const nachReset = useRef(false);
   const e = useMemo(() => berechne(plan), [plan]);
   const pruefen = useMemo(() => bittePruefen(plan), [plan]);
   const status = useMemo(() => ergebnisStatus(plan, pruefen), [plan, pruefen]);
 
-  useEffect(() => { speichern(plan); }, [plan]);
+  // nach einem Reset nichts speichern, bis wieder etwas eingegeben wird (localStorage bleibt leer)
+  useEffect(() => { if (nachReset.current) { nachReset.current = false; return; } speichern(plan); }, [plan]);
   useEffect(() => { if (toast) { const t = setTimeout(() => setToast(''), 3500); return () => clearTimeout(t); } }, [toast]);
   useEffect(() => { setFehlerAnz([]); window.scrollTo?.(0, 0); }, [aktiv]);
 
@@ -61,7 +64,15 @@ export default function App() {
     } catch (err) { setToast('PDF-Erstellung fehlgeschlagen: ' + (err as Error).message); }
   };
 
-  const exportieren = async () => {
+  const allesZuruecksetzen = () => {
+    nachReset.current = true;
+    setPlan(zuruecksetzen());
+    setImportDlg(null); setFehlerAnz([]); setResetDlg(false); setResetGesichert('');
+    if (fileRef.current) fileRef.current.value = '';
+    setAktiv('start'); setTutorial(true);
+    setToast('Alle Eingaben wurden gelöscht – der Plan beginnt von vorn.');
+  };
+  const exportieren = async (): Promise<string | null> => {
     try {
       const { exportiere } = await import('./io/excel');
       const { blob, dateiname } = await exportiere(plan);
@@ -69,7 +80,8 @@ export default function App() {
       const a = document.createElement('a'); a.href = url; a.download = dateiname; document.body.appendChild(a); a.click(); a.remove();
       setTimeout(() => URL.revokeObjectURL(url), 2000);
       setToast(`Excel-Datei „${dateiname}“ erstellt.`);
-    } catch (err) { setToast('Export fehlgeschlagen: ' + (err as Error).message); }
+      return dateiname;
+    } catch (err) { setToast('Export fehlgeschlagen: ' + (err as Error).message); return null; }
   };
   const importieren = async (file: File) => {
     try { const { importiere } = await import('./io/excel'); const r = await importiere(await file.arrayBuffer()); setImportDlg(r); }
@@ -115,7 +127,7 @@ export default function App() {
         <details className="menu"><summary className="btn ghost">⋯</summary><div>
           <button onClick={() => window.print()}>Bildschirmansicht drucken</button>
           <label className="check"><input type="checkbox" checked={plan.meta.pruefer} onChange={ev => upd(p => (p.meta.pruefer = ev.target.checked))} /> Prüfer-Ansicht</label>
-          <button className="danger" onClick={() => { if (confirm('Alle Eingaben löschen und neu beginnen?')) { setPlan(leererPlan()); setAktiv('start'); setTutorial(true); } }}>Neuen Plan beginnen</button>
+          <button className="danger" onClick={ev => { (ev.currentTarget.closest('details') as HTMLDetailsElement | null)?.removeAttribute('open'); setResetDlg(true); }}>Alles zurücksetzen …</button>
         </div></details>
       </div>
     </header>
@@ -139,6 +151,7 @@ export default function App() {
           {offen('ergebnis') && <small className={`kd-status ${status.status}`} data-testid="side-kd-status">{status.status === 'bestaetigt' ? '✓ bestätigt' : status.status === 'veraltet' ? '↻ nicht aktuell bestätigt' : 'noch nicht bestätigt'}</small>}
           {status.fehler.length > 0 ? <small className="kd-status fehler" data-testid="side-liq-fehler">✕ Liquidität negativ ({fmtEUR(e.liq.tiefpunkt)}) – nicht einreichungsfähig</small> : <small className="muted">Liquidität min. {fmtEUR(e.liq.tiefpunkt)}</small>}
         </div>
+        <div className="side-reset"><button className="btn link danger small" data-testid="reset-oeffnen" onClick={() => setResetDlg(true)} title="Alle Eingaben löschen und mit einem leeren Plan neu beginnen">⟲ Alles zurücksetzen …</button></div>
       </nav>
       <main className="content">
         <>
@@ -159,6 +172,23 @@ export default function App() {
         <footer className="footer"><span>ThEx Finanzplan {APP_VERSION} · Rechenhilfe, keine Kreditentscheidung · Daten bleiben in Ihrem Browser</span></footer>
       </main>
     </div>
+    {resetDlg && <div className="modal-bg" onKeyDown={ev => ev.key === 'Escape' && setResetDlg(false)}><div className="modal reset" role="alertdialog" aria-modal="true" aria-labelledby="reset-titel" aria-describedby="reset-text" data-testid="reset-dialog">
+      <h3 id="reset-titel">Alles zurücksetzen?</h3>
+      <div id="reset-text">
+        <p><b>Alle Eingaben werden unwiderruflich gelöscht</b>{plan.projekt.name ? <> – auch der Plan „{plan.projekt.name}“</> : null}:</p>
+        <ul><li>alle Felder (Projekt, private Kosten, Umsatz, Personal, Investitionen, Kosten, Darlehen, Liquidität, Steuer-Parameter, Stundensatz)</li>
+          <li>abgeschlossene Schritte, „bitte prüfen“-Markierungen und die Bestätigung des Ergebnisses</li>
+          <li>die im Browser gespeicherten Daten dieses Plans</li></ul>
+        <p>Danach beginnen Sie wieder bei Schritt 0 mit einem leeren Plan; die Einführung wird erneut angezeigt. Wenn Sie Ihre Daten behalten möchten, sichern Sie den Plan vorher als Excel-Datei – diese können Sie später wieder importieren.</p>
+      </div>
+      {resetGesichert && <p className="pos" data-testid="reset-gesichert">✓ Gesichert als „{resetGesichert}“.</p>}
+      <div className="modal-foot reset-foot">
+        <button className="btn ghost" onClick={async () => { const n = await exportieren(); if (n) setResetGesichert(n); }}>Vorher als Excel sichern</button>
+        <span className="grow" />
+        <button className="btn ghost" autoFocus onClick={() => { setResetDlg(false); setResetGesichert(''); }}>Abbrechen</button>
+        <button className="btn danger-solid" onClick={allesZuruecksetzen}>Ja, alles löschen</button>
+      </div>
+    </div></div>}
     {tutorial && <Tutorial onClose={() => { setTutorial(false); upd(p => (p.meta.tutorialGesehen = true)); }} />}
     {importDlg && <div className="modal-bg"><div className="modal wide" role="dialog" aria-label="Import bestätigen">
       <h3>Excel-Datei importieren</h3>

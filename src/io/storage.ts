@@ -39,6 +39,15 @@ export function speichern(p: Plan) {
   try { localStorage.setItem(KEY, JSON.stringify(p)); } catch { /* Speicher voll o. ä. */ }
 }
 export function loeschen() { localStorage.removeItem(KEY); }
+/** Reset: alle gespeicherten Plandaten dieser App entfernen und einen frischen, leeren Plan liefern */
+export function zuruecksetzen(): Plan {
+  try {
+    const keys: string[] = [];
+    for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); if (k && k.startsWith('thex-finanzplan')) keys.push(k); }
+    keys.forEach(k => localStorage.removeItem(k));
+  } catch { /* kein Speicher verfügbar */ }
+  return leererPlan();
+}
 
 export function getPath(obj: any, path: string): any {
   return path.split('.').reduce((o, k) => (o == null ? undefined : o[k]), obj);

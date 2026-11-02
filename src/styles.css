@@ -176,3 +176,10 @@ td .orient { display: inline; margin-left: 6px; }
 .warn-tag.fehler { background: var(--rot); color: #fff; }
 .sidebar li.fehler .ico { background: var(--rot); color: #fff; border-color: var(--rot); } .sidebar li.fehler em.fe { color: var(--rot); font-style: normal; font-weight: 600; display: block; font-size: 11px; }
 .sz-fehler { color: var(--rot); font-weight: 700; }
+/* v1.2: Reset */
+.side-reset { margin-top: 14px; padding-top: 10px; border-top: 1px solid var(--linie, #e3e8ee); text-align: center; }
+.side-reset .btn { font-size: 12px; }
+.modal.reset { border-top: 5px solid var(--rot); } .modal.reset h3 { color: var(--rot); margin-top: 0; }
+.modal.reset ul { padding-left: 20px; line-height: 1.5; } .modal.reset p { line-height: 1.5; }
+.reset-foot { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 16px; } .reset-foot .grow { flex: 1; }
+.btn.danger-solid { background: var(--rot); color: #fff; border: none; } .btn.danger-solid:hover { background: #a61f1f; }

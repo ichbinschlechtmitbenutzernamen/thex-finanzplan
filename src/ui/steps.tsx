@@ -5,6 +5,8 @@ import { jahr, privatKostenMonat, kontoAnalyse, stundensatz, sum, sollIstZeilen 
 import { neuerGruender, neuesFeld, neuesDarlehen, uid } from '../model/defaults';
 import { Num, Txt, Sel, Check, Field, Card, Help, Tip, HTip, Orient, fmtEUR, fmtPct } from './fields';
 import { hilfe } from '../model/hilfe';
+import { mdAktiv, gzAktiv } from '../model/zweck';
+import { ZweckAuswahl } from './zweck';
 
 export type Upd = (fn: (p: Plan) => void) => void;
 export interface StepProps { plan: Plan; e: Ergebnis; upd: Upd }
@@ -17,8 +19,12 @@ const del = <T,>(arr: T[], i: number) => arr.splice(i, 1);
 // ---------------- 0 Start ----------------
 export function StartStep({ plan, upd, onTutorial, onBeispiel }: StepProps & { onTutorial: () => void; onBeispiel: () => void }) {
   const s = plan.einstellungen;
+  const md = mdAktiv(plan), gz = gzAktiv(plan);
   return <>
-    <Help>Willkommen beim ThEx-Finanzplan. Legen Sie hier die Grundeinstellungen fest. Sie können alles später ändern – abhängige Berechnungen werden automatisch aktualisiert.</Help>
+    <Help>Willkommen beim ThEx-Finanzplan. Legen Sie hier den Planzweck und die Grundeinstellungen fest. Sie können alles später ändern – abhängige Berechnungen werden automatisch aktualisiert.</Help>
+    <Card title="Wofür erstellen Sie den Finanzplan? *" help="Mehrfachauswahl möglich – mindestens ein Zweck. Je nach Zweck blendet der Plan Bereiche ein oder aus; Ihre Eingaben bleiben dabei immer erhalten. Ändern können Sie den Zweck jederzeit auch in der Seitenleiste.">
+      <ZweckAuswahl plan={plan} upd={upd} />
+    </Card>
     <Card title="Grundeinstellungen">
       <div className="grid2">
         <Field label="Rechtsform" tip="Bestimmt Steuern (ESt/GewSt bzw. KSt), Entnahmen und den Rechenweg der Kapitaldienstfähigkeit.">
@@ -29,15 +35,15 @@ export function StartStep({ plan, upd, onTutorial, onBeispiel }: StepProps & { o
             if (v !== 'GBR') p.gruender.forEach(g => (g.anteil = 100 / p.gruender.length));
           })} ariaLabel="Rechtsform" />
         </Field>
-        <Field label="Planungsart" tip="Folgedarlehen: zusätzlich Soll-Ist-Vergleich; Gesamtbetrag Mikrodarlehen bis 45.000 €.">
+        {md && <Field label="Planungsart (Mikrodarlehen)" tip="Folgedarlehen: zusätzlich Soll-Ist-Vergleich; Gesamtbetrag Mikrodarlehen bis 45.000 €.">
           <Sel value={s.folgedarlehen ? 'f' : 'e'} options={[['e', 'Erstdarlehen'], ['f', 'Folgedarlehen']]} onChange={v => upd(p => (p.einstellungen.folgedarlehen = v === 'f'))} ariaLabel="Planungsart" />
-        </Field>
+        </Field>}
       </div>
       <Check value={s.kleinunternehmer} onChange={v => upd(p => (p.einstellungen.kleinunternehmer = v))} label={<>Kleinunternehmerregelung (§ 19 UStG) – es wird keine Umsatzsteuer berechnet, alle Kosten werden brutto geplant.</>} />
     </Card>
     <Card title="Hinweise und Haftung">
       <p className="muted">Alle Eingaben bleiben ausschließlich in Ihrem Browser (lokaler Speicher dieses Geräts). Sichern Sie Ihren Stand regelmäßig über „Excel exportieren“ – die Datei können Sie später wieder importieren oder an ThEx senden.</p>
-      <p className="muted">Der Finanzplan ist ein Planungswerkzeug. Steuern und Sozialabgaben werden vereinfacht geschätzt (Parameter {plan.params.jahr}); er ersetzt keine Steuer- oder Rechtsberatung. Die Entscheidung über das Mikrodarlehen trifft die Thüringer Aufbaubank.</p>
+      <p className="muted">Der Finanzplan ist ein Planungswerkzeug. Steuern und Sozialabgaben werden vereinfacht geschätzt (Parameter {plan.params.jahr}); er ersetzt keine Steuer- oder Rechtsberatung.{md && ' Die Entscheidung über das Mikrodarlehen trifft die Thüringer Aufbaubank.'}{gz && ' Über den Gründungszuschuss entscheidet die Agentur für Arbeit; die Tragfähigkeit bestätigt eine fachkundige Stelle.'}</p>
       <Check value={plan.meta.haftungBestaetigt} onChange={v => upd(p => (p.meta.haftungBestaetigt = v))} label={<b>Ich habe die Hinweise gelesen und verstanden.</b>} />
       <div className="row gap">
         <button className="btn ghost" onClick={onTutorial}>Einführung erneut ansehen</button>
@@ -275,9 +281,14 @@ export function KostenStep({ plan, e, upd }: StepProps) {
 
 // ---------------- 7 Darlehen ----------------
 export function DarlehenStep({ plan, e, upd }: StepProps) {
+  const md = mdAktiv(plan);
+  const weitere = plan.darlehen.length > 1;
   return <>
-    <Help>Darlehen 1 ist das <b>Mikrodarlehen</b> der Thüringer Aufbaubank (5.000–35.000 €, Folgedarlehen bis 45.000 € gesamt; Laufzeit bis 84 Monate, davon bis zu 12 tilgungsfrei; die Laufzeit verlängert sich dadurch nicht). Zins und Tilgung werden monatlich nachträglich gezahlt. Weitere oder bereits laufende Kredite sind meist <b>Annuitätendarlehen</b>. <HTip k="darlehen.allgemein" /></Help>
+    {!md && <Help>Planen Sie hier Bankdarlehen, Förderkredite oder bereits laufende Kredite (meist <b>Annuitätendarlehen</b>). Zins und Tilgung werden monatlich nachträglich gezahlt. Das <b>Mikrodarlehen der TAB</b> ist ausgeblendet, weil es nicht als Planzweck gewählt ist – frühere Eingaben dazu bleiben gespeichert und werden nicht gerechnet. Ohne Darlehen planen Sie die Finanzierung in Schritt 8 über Eigenmittel. <HTip k="darlehen.allgemein" /></Help>}
+    {!md && !weitere && <p className="muted" data-testid="keine-darlehen">Keine Darlehen geplant.</p>}
+    {md && <Help>Darlehen 1 ist das <b>Mikrodarlehen</b> der Thüringer Aufbaubank (5.000–35.000 €, Folgedarlehen bis 45.000 € gesamt; Laufzeit bis 84 Monate, davon bis zu 12 tilgungsfrei; die Laufzeit verlängert sich dadurch nicht). Zins und Tilgung werden monatlich nachträglich gezahlt. Weitere oder bereits laufende Kredite sind meist <b>Annuitätendarlehen</b>. <HTip k="darlehen.allgemein" /></Help>}
     {plan.darlehen.map((d, i) => {
+      if (i === 0 && !md) return null;
       const set = (fn: (x: typeof d) => void) => upd(p => fn(p.darlehen[i]));
       const t = e.darlehen[i].plan;
       return <Card key={d.id} title={<>{i === 0 ? 'Darlehen 1 – ' : `Darlehen ${i + 1} – `}<Txt value={d.bez} onChange={v => set(x => (x.bez = v))} /></>}
@@ -293,7 +304,7 @@ export function DarlehenStep({ plan, e, upd }: StepProps) {
           {i > 0 && <Field label="Status"><Check value={d.bestehend} onChange={v => set(x => (x.bestehend = v))} label="bereits ausgezahlt (bestehender Kredit)" /></Field>}
         </div>
         {t.length > 0 && <>
-          <p className="kpi-inline">Rate ab Tilgungsbeginn: <b>{fmtEUR(t[Math.min(d.tilgungsfrei, t.length - 1)].rate, 2)}</b> · Zinsen gesamt: <b>{fmtEUR(t.reduce((s, z) => s + z.zins, 0), 2)}</b> · Kapitaldienst Plan-Jahr 2: <b>{fmtEUR(jahr(e.darlehen[i].plan.reduce((a, z) => { if (z.planMonat <= 36) a[z.planMonat - 1] += z.rate; return a; }, Array(36).fill(0)), 2), 2)}</b></p>
+          <p className="kpi-inline">Rate ab Tilgungsbeginn: <b>{fmtEUR(t[Math.min(d.tilgungsfrei, t.length - 1)].rate, 2)}</b> · Zinsen gesamt: <b>{fmtEUR(t.reduce((s, z) => s + z.zins, 0), 2)}</b> · {md ? 'Kapitaldienst' : 'Zins + Tilgung'} Plan-Jahr 2: <b>{fmtEUR(jahr(e.darlehen[i].plan.reduce((a, z) => { if (z.planMonat <= 36) a[z.planMonat - 1] += z.rate; return a; }, Array(36).fill(0)), 2), 2)}</b></p>
           <details><summary>Tilgungsplan anzeigen ({t.length} Monate)</summary>
             <div className="scroll tall"><table className="tbl result compact"><thead><tr><th>Monat</th><th>Planmonat</th><th>Restschuld Anfang</th><th>Zins</th><th>Tilgung</th><th>Rate</th><th>Restschuld Ende</th></tr></thead><tbody>
               {t.map(z => <tr key={z.k}><td>{z.k}</td><td>{z.planMonat <= 36 ? e.labels[z.planMonat - 1] : `M ${z.planMonat}`}</td><td>{fmtEUR(z.restAnfang, 2)}</td><td>{fmtEUR(z.zins, 2)}</td><td>{fmtEUR(z.tilgung, 2)}</td><td>{fmtEUR(z.rate, 2)}</td><td>{fmtEUR(z.restEnde, 2)}</td></tr>)}
@@ -340,7 +351,7 @@ export function SteuernStep({ plan, e, upd }: StepProps) {
         {n('kvZusatz', 'KV-Zusatzbeitrag', true, undefined, 'steuern.kvZusatz')}{n('kvSatz', 'KV allgemeiner/ermäßigter Satz', true)}{n('kvKrankengeld', 'KV Krankengeld-Anteil', true)}
         {n('pvKinderlos', 'PV kinderlos', true)}{n('pvKind', 'PV mit Kind', true)}{n('kvMindestBemessungMonat', 'KV-Mindestbemessung / Monat')}{n('kvBbg', 'BBG KV/PV p. a.')}
         {n('grvSatz', 'Rentenversicherung', true)}{n('grvRegelbeitrag', 'GRV-Regelbeitrag / Monat')}{n('agSv', 'AG-Anteil SV', true)}{n('agMinijob', 'AG-Anteil Minijob', true)}
-        {n('kdGrenze', 'KD-Grenzwert', true, 'Kapitaldienst darf höchstens diesen Anteil der KD-Grenze ausmachen.')}{n('kdGelb', 'KD gelbe Zone ab', true)}
+        {mdAktiv(plan) && <>{n('kdGrenze', 'KD-Grenzwert', true, 'Kapitaldienst darf höchstens diesen Anteil der KD-Grenze ausmachen.')}{n('kdGelb', 'KD gelbe Zone ab', true)}</>}
       </div>
     </Card>
     <Card title="Steuern im Plan">
@@ -370,7 +381,7 @@ export function StundensatzStep({ plan, e, upd }: StepProps) {
     <div className="grid2">
       <Card title="Ihre Arbeitszeit">
         <div className="grid2">
-          <Field label="Basis Planjahr"><Sel value={String(s.jahr) as '1'} options={[['1', 'Jahr 1'], ['2', 'Jahr 2 (KD-Jahr)'], ['3', 'Jahr 3']]} onChange={v => upd(p => (p.stundensatz.jahr = Number(v) as 1))} ariaLabel="Basis Planjahr" /></Field>
+          <Field label="Basis Planjahr"><Sel value={String(s.jahr) as '1'} options={[['1', 'Jahr 1'], ['2', mdAktiv(plan) ? 'Jahr 2 (KD-Jahr)' : 'Jahr 2'], ['3', 'Jahr 3']]} onChange={v => upd(p => (p.stundensatz.jahr = Number(v) as 1))} ariaLabel="Basis Planjahr" /></Field>
           {n('arbeitstage', 'Arbeitstage p. a.', 'std.arbeitstage', { d: 0 })}{n('urlaub', 'Urlaubstage', 'std.urlaub', { d: 0 })}{n('krankheit', 'Krankheitstage', 'std.krankheit', { d: 0 })}{n('feiertage', 'Feiertage (werktags)', 'std.feiertage', { d: 0 })}
           {n('stundenTag', 'Arbeitsstunden / Tag', 'std.stundenTag')}{n('unproduktiv', 'davon nicht fakturierbar (h/Tag)', 'std.unproduktiv')}{n('auslastung', 'Auslastungsquote', 'std.auslastung', { pct: true })}
         </div>

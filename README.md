@@ -14,6 +14,7 @@ npm run preview    # gebaute App unter http://localhost:4173/thex-finanzplan/
 node scripts/e2e.mjs   # Browser-Test inkl. Export/Import und Screenshots (Preview muss laufen)
 node scripts/e2e_v11.mjs   # Browser-Test v1.1: bitte prüfen, Hinweise, Szenarien, Stundensatz, PDF, Liquiditätsfehler
 node scripts/e2e_v12.mjs   # Browser-Test v1.2: Alles zurücksetzen (Dialog, Abbrechen, Sicherung, Reset)
+node scripts/e2e_v13.mjs   # Browser-Test v1.3: Planzweck, leerer Plan ohne Liquiditätsfehler, Umschalten, Import alter Dateien
 npx vite-node scripts/beispiel-pdf.ts ../beispiel_tab.pdf   # Beispiel-PDF für die TAB erzeugen
 ```
 
@@ -75,3 +76,18 @@ Alle Steuer- und SV-Werte stehen in `src/model/defaults.ts` (`PARAMS_2026`), z. 
 ## Version 1.2
 
 - **Alles zurücksetzen:** Button in der Seitenleiste (unten) und im Menü „⋯“. Ein Bestätigungsdialog erklärt, was gelöscht wird, und bietet „Vorher als Excel sichern“ an; der Fokus liegt auf „Abbrechen“. Beim Zurücksetzen werden alle Eingaben, erledigte Schritte, „bitte prüfen“-Markierungen und die Ergebnis-Bestätigung gelöscht, die Browserdaten entfernt; der Plan beginnt wieder bei Schritt 0 mit Einführung.
+
+## Version 1.3
+
+- **Planzweck (Schritt 0, „Wofür erstellen Sie den Finanzplan?“):** Checkboxen mit Mehrfachauswahl, mindestens ein Zweck ist Pflicht:
+  - *Erste Schätzung / eigene Orientierung*: weniger streng. Projektname, Namen, private Kosten, PKV-Beitrag und negative Liquidität erscheinen als Hinweise („Für eine erste Schätzung nicht zwingend“), nicht als Fehler. Das gilt nur, solange kein Antragszweck gewählt ist.
+  - *Gründungszuschuss (Agentur für Arbeit)*: Kapitalbedarfsplan, Rentabilitätsvorschau (3 Jahre) und Liquiditätsplan mit GZ-Überschriften. PDF „Finanzplan – Gründungszuschuss“ (Dateiname `…_GZ_…`). Hinweis, wenn kein Gründungszuschuss eingetragen ist.
+  - *Thüringer Mikrodarlehen (TAB)*: Verhalten wie bis v1.2, mit KD-Prüfung, Mikrodarlehen, Tilgungsplan, Kontoauszugsanalyse und Soll-Ist.
+- **Ohne Mikrodarlehen** sind Kontoauszugsanalyse (Prüfer), KD-Berechnung, Mikrodarlehen samt Tilgungsplan und Soll-Ist (Folgedarlehen) ausgeblendet: in Navigation, Freischaltung, Dashboard, Seitenleiste, Szenarien, PDF und Excel (kein Blatt `KD_Pruefung`/`Pruefung`). Sie blockieren nichts; die KD ist dann kein Abschlusskriterium. Die Eingaben bleiben gespeichert und sind beim erneuten Anhaken wieder da. Kapitalbedarf, Finanzierung (weitere Darlehen, Eigenmittel) und Liquidität gibt es bei jedem Zweck.
+- Ändern lässt sich der Zweck jederzeit: in der Seitenleiste („Planzweck … ändern“), im Menü „⋯“ oder in Schritt 0. Ein Wechsel markiert das Ergebnis als „nicht aktuell bestätigt“.
+- **Excel:** Der Zweck steht als Eingabe (ja/nein) im Blatt *Projekt* und wird beim Import übernommen. Dateien aus v1.0–v1.2 haben keinen Zweck: Sie werden mit „Mikrodarlehen“ importiert, und der Import-Dialog sowie die Zweck-Auswahl zeigen einen Hinweis. Für ältere Browserdaten gilt dasselbe (Schema-Version 2).
+- „Alles zurücksetzen“ setzt auch den Zweck zurück. Die Einführung fragt den Zweck ab und blendet je nach Zweck eigene Folien ein (Schätzung, Gründungszuschuss, KD).
+- **Liquiditätsfehler bei leerem Plan behoben:** Ein leerer Plan zeigte „−10.290 €“. Ursache: Für gesetzlich Versicherte rechnet die App den KV/PV-Mindestbeitrag (Mindestbemessung 1.318,33 €/Monat × 21,7 % ≈ 286 €/Monat, 3.432,93 €/Jahr) als Privatentnahme, auch ohne Umsatz. Über 36 Monate sind das −10.298,79 €. Die Rechnung bleibt unverändert. Der Fehler wird außerhalb von Schritt 8 (Seitenleiste, Dashboard, PDF, Excel) aber erst gemeldet, wenn er aussagekräftig ist: sobald Finanzierung oder Liquidität abgeschlossen sind oder das Ergebnis bestätigt wurde, oder sobald Umsatz und Kosten erfasst sind und zusätzlich Kosten abgeschlossen oder eine Finanzierung eingetragen ist. Vorher steht in der Seitenleiste „Liquidität: wird geprüft, sobald …“. In Schritt 8 und bei der Ergebnis-Bestätigung bleibt der Fehler blockierend (außer im Zweck „nur erste Schätzung“).
+- Datenmodell: `Plan.zweck` (TypeScript-Typ + Migration in `io/storage.ts`). Zod ist im Projekt nicht im Einsatz, daher gibt es kein Zod-Schema.
+- Tests: `src/__tests__/v13.test.ts` (Vitest) und `scripts/e2e_v13.mjs` (Playwright).
+

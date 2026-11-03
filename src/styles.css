@@ -183,3 +183,19 @@ td .orient { display: inline; margin-left: 6px; }
 .modal.reset ul { padding-left: 20px; line-height: 1.5; } .modal.reset p { line-height: 1.5; }
 .reset-foot { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 16px; } .reset-foot .grow { flex: 1; }
 .btn.danger-solid { background: var(--rot); color: #fff; border: none; } .btn.danger-solid:hover { background: #a61f1f; }
+
+/* v1.3 Planzweck */
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.zweck-auswahl { border: 0; padding: 0; margin: 8px 0 14px; display: flex; flex-direction: column; gap: 8px; text-align: left; }
+.zweck-opt { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border: 1.5px solid var(--rand); border-radius: var(--radius); cursor: pointer; background: #fff; }
+.zweck-opt.on { border-color: var(--blau2); background: var(--hell); }
+.zweck-opt input { margin-top: 3px; width: 16px; height: 16px; accent-color: var(--blau); }
+.zweck-opt span { display: flex; flex-direction: column; gap: 2px; }
+.zweck-auswahl.kompakt .zweck-opt { padding: 6px 10px; }
+.zweck-alt { margin: 4px 0 0; padding: 8px 10px; border-radius: 8px; background: #fff4c2; color: #6b4e00; font-size: 12.5px; line-height: 1.45; }
+.side-zweck { border-top: 1px solid var(--rand); padding: 10px 0; margin-top: 10px; display: flex; flex-direction: column; gap: 2px; font-size: 12.5px; }
+.side-zweck b { color: var(--blau); }
+.side-zweck .btn { align-self: flex-start; padding: 0; font-size: 12px; }
+.kd-status.warn { background: #fff1d6; color: #8a5300; }
+.weich-box { margin: 10px 0; padding: 10px 14px; border-left: 4px solid var(--orange); background: #fffaf0; border-radius: 6px; font-size: 13px; }
+.weich-box ul { margin: 4px 0 0; padding-left: 18px; }

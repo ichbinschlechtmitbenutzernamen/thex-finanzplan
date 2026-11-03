@@ -5,7 +5,9 @@ import { laden, speichern, zuruecksetzen } from './io/storage';
 import type { ImportErgebnis } from './io/excel';
 import { beispielPlan } from './model/beispiel';
 import { fmtEUR, StepHinweise, FehlerBox } from './ui/fields';
-import { STEPS, fehler, freigeschaltet, bestaetige, bittePruefen, ergebnisStatus, standErgaenzen, stepById } from './model/schritte';
+import { STEPS, fehler, freigeschaltet, bestaetige, bittePruefen, ergebnisStatus, standErgaenzen, stepById, schrittTitel, weicheHinweise } from './model/schritte';
+import { mdAktiv, zweckKurz, zweckGewaehlt } from './model/zweck';
+import { ZweckDialog } from './ui/zweck';
 import { SzenarienStep } from './ui/szenarien';
 import { APP_VERSION } from './version';
 import * as S from './ui/steps';
@@ -24,6 +26,7 @@ export default function App() {
   const [fehlerAnz, setFehlerAnz] = useState<string[]>([]);
   const fileRef = useRef<HTMLInputElement>(null);
   const [resetDlg, setResetDlg] = useState(false);
+  const [zweckDlg, setZweckDlg] = useState(false);
   const [resetGesichert, setResetGesichert] = useState('');
   const nachReset = useRef(false);
   const e = useMemo(() => berechne(plan), [plan]);
@@ -38,6 +41,9 @@ export default function App() {
   const upd: S.Upd = fn => setPlan(prev => { const n = structuredClone(prev); fn(n); n.meta.geaendert = new Date().toISOString(); return n; });
   const sichtbar = STEPS.filter(s => !s.sichtbar || s.sichtbar(plan));
   const step = sichtbar.find(s => s.id === aktiv) ?? sichtbar[0];
+  const md = mdAktiv(plan);
+  const titel = (id: string) => schrittTitel(id, plan);
+  const pdfLabel = md ? 'PDF für TAB' : 'PDF erstellen';
   const offen = (id: string) => freigeschaltet(id, plan);
 
   const abschliessen = () => {
@@ -48,7 +54,7 @@ export default function App() {
     const idx = sichtbar.findIndex(s => s.id === step.id);
     const naechster = sichtbar.slice(idx + 1).find(s => s.art !== 'optional') ?? sichtbar[idx + 1];
     if (naechster) setAktiv(naechster.id);
-    setToast(pruefen[step.id] ? `Schritt „${step.titel}“ geprüft und bestätigt.` : `Schritt „${step.titel}“ abgeschlossen.`);
+    setToast(pruefen[step.id] ? `Schritt „${titel(step.id)}“ geprüft und bestätigt.` : `Schritt „${titel(step.id)}“ abgeschlossen.`);
   };
   const ergebnisBestaetigen = () => upd(p => { p.meta.bestaetigtAm = new Date().toISOString(); bestaetige('ergebnis', p); });
 
@@ -67,7 +73,7 @@ export default function App() {
   const allesZuruecksetzen = () => {
     nachReset.current = true;
     setPlan(zuruecksetzen());
-    setImportDlg(null); setFehlerAnz([]); setResetDlg(false); setResetGesichert('');
+    setImportDlg(null); setFehlerAnz([]); setResetDlg(false); setZweckDlg(false); setResetGesichert('');
     if (fileRef.current) fileRef.current.value = '';
     setAktiv('start'); setTutorial(true);
     setToast('Alle Eingaben wurden gelöscht – der Plan beginnt von vorn.');
@@ -92,7 +98,7 @@ export default function App() {
   const props = { plan, e, upd };
   const inhalt = (() => {
     switch (step.id) {
-      case 'start': return <S.StartStep {...props} onTutorial={() => setTutorial(true)} onBeispiel={() => { if (confirm('Beispielprojekt laden? Ihre aktuellen Eingaben werden ersetzt (vorher ggf. exportieren).')) { const b = beispielPlan(); b.meta.tutorialGesehen = true; b.meta.haftungBestaetigt = true; standErgaenzen(b); setPlan(b); setFehlerAnz([]); setToast('Beispielprojekt „Muster Werkstatt“ geladen.'); } }} />;
+      case 'start': return <S.StartStep {...props} onTutorial={() => setTutorial(true)} onBeispiel={() => { if (confirm('Beispielprojekt laden? Ihre aktuellen Eingaben werden ersetzt (vorher ggf. exportieren).')) { const b = beispielPlan(); if (zweckGewaehlt(plan)) b.zweck = { ...plan.zweck }; b.meta.tutorialGesehen = true; b.meta.haftungBestaetigt = true; standErgaenzen(b); setPlan(b); setFehlerAnz([]); setToast('Beispielprojekt „Muster Werkstatt“ geladen.'); } }} />;
       case 'projekt': return <S.ProjektStep {...props} />;
       case 'privat': return <S.PrivatStep {...props} />;
       case 'haushaltsbuch': return <S.HaushaltsbuchStep {...props} />;
@@ -116,17 +122,18 @@ export default function App() {
 
   return <div className="app">
     <header className="topbar">
-      <div className="brand"><span className="wordmark" aria-label="ThEx Finanzplan"><b>ThEx</b> Finanzplan</span><small>Gründungs- und Finanzplanung · Mikrodarlehen Thüringen</small></div>
+      <div className="brand"><span className="wordmark" aria-label="ThEx Finanzplan"><b>ThEx</b> Finanzplan</span><small data-testid="untertitel">Gründungs- und Finanzplanung{zweckGewaehlt(plan) ? <> · {zweckKurz(plan)}</> : null}</small></div>
       <div className="proj">{plan.projekt.name || 'Neuer Plan'} <span className="muted">· {S.RECHTSFORMEN.find(r => r[0] === plan.einstellungen.rechtsform)?.[1]}</span></div>
       <div className="tools">
         <button className="btn ghost" onClick={() => setTutorial(true)}>Einführung</button>
         <button className="btn ghost" onClick={() => fileRef.current?.click()}>Excel importieren</button>
         <input ref={fileRef} type="file" accept=".xlsx" hidden data-testid="import-input" onChange={ev => ev.target.files?.[0] && importieren(ev.target.files[0])} />
         <button className="btn primary" onClick={exportieren}>Excel exportieren</button>
-        <button className="btn ghost" onClick={pdfErstellen} disabled={!offen('ergebnis')} title={offen('ergebnis') ? 'Zusammenfassung als PDF für die Thüringer Aufbaubank' : 'Verfügbar, sobald alle Pflichtschritte abgeschlossen sind'}>PDF für TAB</button>
+        <button className="btn ghost" onClick={pdfErstellen} disabled={!offen('ergebnis')} title={offen('ergebnis') ? (md ? 'Zusammenfassung als PDF für die Thüringer Aufbaubank' : 'Zusammenfassung als PDF') : 'Verfügbar, sobald alle Pflichtschritte abgeschlossen sind'}>{pdfLabel}</button>
         <details className="menu"><summary className="btn ghost">⋯</summary><div>
           <button onClick={() => window.print()}>Bildschirmansicht drucken</button>
-          <label className="check"><input type="checkbox" checked={plan.meta.pruefer} onChange={ev => upd(p => (p.meta.pruefer = ev.target.checked))} /> Prüfer-Ansicht</label>
+          <button data-testid="menu-zweck" onClick={ev => { (ev.currentTarget.closest('details') as HTMLDetailsElement | null)?.removeAttribute('open'); setZweckDlg(true); }}>Planzweck ändern …</button>
+          {md && <label className="check"><input type="checkbox" checked={plan.meta.pruefer} onChange={ev => upd(p => (p.meta.pruefer = ev.target.checked))} /> Prüfer-Ansicht</label>}
           <button className="danger" onClick={ev => { (ev.currentTarget.closest('details') as HTMLDetailsElement | null)?.removeAttribute('open'); setResetDlg(true); }}>Alles zurücksetzen …</button>
         </div></details>
       </div>
@@ -142,34 +149,41 @@ export default function App() {
           const err = auf && e.warnungen.some(w => w.fehler && w.schritt === s.id);
           const icon = !auf ? '🔒' : err ? '✕' : pr ? '↻' : done ? '✓' : warn ? '!' : s.nr;
           return <li key={s.id} data-testid={`nav-${s.id}`} className={`${s.id === step.id ? 'active' : ''} ${auf ? '' : 'locked'} ${done ? 'done' : ''} ${warn ? 'warn' : ''} ${pr ? 'pruefen' : ''} ${err ? 'fehler' : ''} ${s.art}`}>
-            <button onClick={() => setAktiv(s.id)} title={!auf ? 'Wird freigeschaltet, sobald die vorherigen Schritte abgeschlossen sind.' : pr ? `Bitte prüfen: ${pruefen[s.id].map(x => stepById(x)?.titel).join(', ')} wurde geändert.` : ''}><span className="ico">{icon}</span><span className="t">{s.titel}{s.art === 'optional' && <em> optional</em>}{err ? <em className="fe"> Fehler</em> : pr && <em className="pr"> bitte prüfen</em>}</span></button>
+            <button onClick={() => setAktiv(s.id)} title={!auf ? 'Wird freigeschaltet, sobald die vorherigen Schritte abgeschlossen sind.' : pr ? `Bitte prüfen: ${pruefen[s.id].map(titel).join(', ')} wurde geändert.` : ''}><span className="ico">{icon}</span><span className="t">{titel(s.id)}{s.art === 'optional' && <em> optional</em>}{err ? <em className="fe"> Fehler</em> : pr && <em className="pr"> bitte prüfen</em>}</span></button>
           </li>;
         })}</ol>
+        <div className="side-zweck" data-testid="side-zweck"><small className="muted">Planzweck</small><b>{zweckKurz(plan)}</b><button className="btn link" data-testid="zweck-aendern" onClick={() => setZweckDlg(true)}>ändern …</button></div>
         <div className="side-kd">
-          <small>KD-Ampel</small>
-          <div className={`pill ${offen('ergebnis') ? e.kd.ampel : 'aus'} ${offen('ergebnis') && status.status !== 'bestaetigt' ? (status.status === 'veraltet' ? 'veraltet' : 'offen-st') : ''}`} data-testid="side-kd">{offen('ergebnis') ? (isFinite(e.kd.auslastung) ? `${(e.kd.auslastung * 100).toFixed(1).replace('.', ',')} %` : 'nicht gegeben') : '–'}</div>
+          {md ? <>
+            <small>KD-Ampel</small>
+            <div className={`pill ${offen('ergebnis') ? e.kd.ampel : 'aus'} ${offen('ergebnis') && status.status !== 'bestaetigt' ? (status.status === 'veraltet' ? 'veraltet' : 'offen-st') : ''}`} data-testid="side-kd">{offen('ergebnis') ? (isFinite(e.kd.auslastung) ? `${(e.kd.auslastung * 100).toFixed(1).replace('.', ',')} %` : 'nicht gegeben') : '–'}</div>
+          </> : <small>Ergebnis</small>}
           {offen('ergebnis') && <small className={`kd-status ${status.status}`} data-testid="side-kd-status">{status.status === 'bestaetigt' ? '✓ bestätigt' : status.status === 'veraltet' ? '↻ nicht aktuell bestätigt' : 'noch nicht bestätigt'}</small>}
-          {status.fehler.length > 0 ? <small className="kd-status fehler" data-testid="side-liq-fehler">✕ Liquidität negativ ({fmtEUR(e.liq.tiefpunkt)}) – nicht einreichungsfähig</small> : <small className="muted">Liquidität min. {fmtEUR(e.liq.tiefpunkt)}</small>}
+          {status.fehler.length > 0 ? <small className="kd-status fehler" data-testid="side-liq-fehler">✕ Liquidität negativ ({fmtEUR(e.liq.tiefpunkt)}) – nicht einreichungsfähig</small>
+            : !e.liq.fehlerRelevant ? <small className="muted" data-testid="side-liq-info">Liquidität: wird geprüft, sobald Umsatz, Kosten und Finanzierung erfasst sind</small>
+            : e.liq.negMonate.length > 0 ? <small className="kd-status warn" data-testid="side-liq-warnung">! Liquidität negativ ({fmtEUR(e.liq.tiefpunkt)}) – Hinweis</small>
+            : <small className="muted">Liquidität min. {fmtEUR(e.liq.tiefpunkt)}</small>}
         </div>
         <div className="side-reset"><button className="btn link danger small" data-testid="reset-oeffnen" onClick={() => setResetDlg(true)} title="Alle Eingaben löschen und mit einem leeren Plan neu beginnen">⟲ Alles zurücksetzen …</button></div>
       </nav>
       <main className="content">
         <>
-        <div className="step-head"><span className="nr">Schritt {step.nr}</span><h2>{step.titel}</h2>{plan.meta.erledigt[step.id] && !pruefen[step.id] && <span className="badge ok">abgeschlossen</span>}{pruefen[step.id] && <span className="badge pruefen">bitte prüfen</span>}</div>
+        <div className="step-head"><span className="nr">Schritt {step.nr}</span><h2>{titel(step.id)}</h2>{plan.meta.erledigt[step.id] && !pruefen[step.id] && <span className="badge ok">abgeschlossen</span>}{pruefen[step.id] && <span className="badge pruefen">bitte prüfen</span>}</div>
         {gesperrt ? <div className="locked-box"><div className="big">🔒</div><p>Dieser Schritt wird freigeschaltet, sobald Sie die vorherigen Schritte abgeschlossen haben:</p>
-          <ul>{STEPS.filter(s => s.art === 'pflicht' && !plan.meta.erledigt[s.id]).slice(0, 3).map(s => <li key={s.id}><button className="btn link" onClick={() => setAktiv(s.id)}>{s.nr} {s.titel}</button></li>)}</ul></div>
+          <ul>{STEPS.filter(s => s.art === 'pflicht' && !plan.meta.erledigt[s.id]).slice(0, 3).map(s => <li key={s.id}><button className="btn link" onClick={() => setAktiv(s.id)}>{s.nr} {titel(s.id)}</button></li>)}</ul></div>
           : <>
-            {pruefen[step.id] && <div className="pruefen-box" role="status" data-testid="pruefen-box"><b>↻ Bitte prüfen:</b> Seit Sie diesen Schritt {step.id === 'ergebnis' ? 'bestätigt' : 'abgeschlossen'} haben, wurden frühere Angaben geändert: {pruefen[step.id].map((x, i) => <React.Fragment key={x}>{i > 0 && ', '}<button className="btn link" onClick={() => setAktiv(x)}>{stepById(x)?.nr} {stepById(x)?.titel}</button></React.Fragment>)}. Bitte kontrollieren Sie Ihre Angaben hier und bestätigen Sie {step.id === 'ergebnis' ? 'das Ergebnis erneut' : <>mit „Prüfen und weiter“</>}.</div>}
+            {pruefen[step.id] && <div className="pruefen-box" role="status" data-testid="pruefen-box"><b>↻ Bitte prüfen:</b> Seit Sie diesen Schritt {step.id === 'ergebnis' ? 'bestätigt' : 'abgeschlossen'} haben, wurden frühere Angaben geändert: {pruefen[step.id].map((x, i) => <React.Fragment key={x}>{i > 0 && ', '}<button className="btn link" onClick={() => setAktiv(x)}>{stepById(x)?.nr ?? '0'} {titel(x)}</button></React.Fragment>)}. Bitte kontrollieren Sie Ihre Angaben hier und bestätigen Sie {step.id === 'ergebnis' ? 'das Ergebnis erneut' : <>mit „Prüfen und weiter“</>}.</div>}
             {step.id !== 'ergebnis' && <FehlerBox warnungen={e.warnungen} schritt={step.id} onGoto={setAktiv} />}
             {step.id !== 'ergebnis' && <StepHinweise warnungen={e.warnungen} schritt={step.id} />}
+            {weicheHinweise(step.id, plan).length > 0 && <div className="weich-box" role="note" data-testid="weich-hinweise"><b>Für eine erste Schätzung nicht zwingend:</b><ul>{weicheHinweise(step.id, plan).map(t => <li key={t}>{t}</li>)}</ul></div>}
             {inhalt}
             {fehlerAnz.length > 0 && <div className="errors" role="alert"><b>Bitte noch ergänzen bzw. korrigieren:</b><ul>{fehlerAnz.map(f => <li key={f}>{f}</li>)}</ul></div>}
             <div className="step-foot">
               {step.art !== 'ergebnis' && <button className="btn primary" onClick={abschliessen}>{step.art === 'optional' ? 'Fertig' : plan.meta.erledigt[step.id] ? 'Prüfen und weiter' : 'Schritt abschließen'} →</button>}
-              {step.art === 'ergebnis' && <><button className="btn primary" onClick={exportieren}>Plan als Excel exportieren</button> <button className="btn ghost" onClick={pdfErstellen}>PDF für TAB</button></>}
+              {step.art === 'ergebnis' && <><button className="btn primary" onClick={exportieren}>Plan als Excel exportieren</button> <button className="btn ghost" onClick={pdfErstellen}>{pdfLabel}</button></>}
             </div></>}
         </>
-        <footer className="footer"><span>ThEx Finanzplan {APP_VERSION} · Rechenhilfe, keine Kreditentscheidung · Daten bleiben in Ihrem Browser</span></footer>
+        <footer className="footer"><span>ThEx Finanzplan {APP_VERSION} · Rechenhilfe{md ? ', keine Kreditentscheidung' : ''} · Daten bleiben in Ihrem Browser</span></footer>
       </main>
     </div>
     {resetDlg && <div className="modal-bg" onKeyDown={ev => ev.key === 'Escape' && setResetDlg(false)}><div className="modal reset" role="alertdialog" aria-modal="true" aria-labelledby="reset-titel" aria-describedby="reset-text" data-testid="reset-dialog">
@@ -189,10 +203,12 @@ export default function App() {
         <button className="btn danger-solid" onClick={allesZuruecksetzen}>Ja, alles löschen</button>
       </div>
     </div></div>}
-    {tutorial && <Tutorial onClose={() => { setTutorial(false); upd(p => (p.meta.tutorialGesehen = true)); }} />}
+    {tutorial && <Tutorial plan={plan} upd={upd} onClose={() => { setTutorial(false); upd(p => (p.meta.tutorialGesehen = true)); }} />}
+    {zweckDlg && <ZweckDialog plan={plan} upd={upd} onClose={() => { setZweckDlg(false); setToast(`Planzweck: ${zweckKurz(plan)}`); }} />}
     {importDlg && <div className="modal-bg"><div className="modal wide" role="dialog" aria-label="Import bestätigen">
       <h3>Excel-Datei importieren</h3>
       <p className="muted">Exportiert am {new Date(importDlg.meta.exportiert).toLocaleString('de-DE')} · Version {importDlg.meta.appVersion} · {importDlg.meta.hashOk ? 'Datenblock unverändert' : <b className="neg">Datenblock wurde verändert</b>}</p>
+      {importDlg.meta.zweckErgaenzt && <p className="zweck-alt" data-testid="import-zweck-hinweis">Diese Datei stammt aus einer älteren Version ({importDlg.meta.appVersion || 'v1.0–v1.2'}) ohne Planzweck. Es wird <b>„Thüringer Mikrodarlehen (TAB)“</b> voreingestellt – Sie können den Zweck nach dem Import in der Seitenleiste unter „Planzweck … ändern“ anpassen.</p>}
       {importDlg.aenderungen.length === 0 ? <p>In den Eingabezellen wurden <b>keine Änderungen</b> gegenüber dem exportierten Stand gefunden. Der Plan aus der Datei wird vollständig übernommen und ersetzt den aktuellen Stand im Browser.</p>
         : <><p><b>{importDlg.aenderungen.length} Änderung(en)</b> in der Excel-Datei gefunden. Bitte prüfen und bestätigen:</p>
           <div className="scroll tall"><table className="tbl result"><thead><tr><th>Feld</th><th>bisher</th><th>neu</th></tr></thead><tbody>

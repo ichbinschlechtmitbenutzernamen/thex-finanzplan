@@ -18,7 +18,7 @@ const nav = t => page.locator('nav.sidebar button', { hasText: t }).first().clic
 await page.goto(URL);
 await page.getByRole('dialog', { name: 'Einführung' }).waitFor();
 await page.keyboard.press('Escape').catch(() => {});
-if (await page.getByRole('dialog', { name: 'Einführung' }).isVisible()) { for (let i = 0; i < 4; i++) await page.getByRole('button', { name: 'Weiter' }).click(); await page.getByRole('button', { name: "Los geht's" }).click(); }
+if (await page.getByRole('dialog', { name: 'Einführung' }).isVisible()) { while (await page.getByRole('button', { name: 'Weiter' }).isVisible()) await page.getByRole('button', { name: 'Weiter' }).click(); await page.getByRole('button', { name: "Los geht's" }).click(); }
 check(await page.locator('.wordmark').innerText() === 'ThEx Finanzplan', 'Wortmarke „ThEx Finanzplan“');
 await page.getByRole('button', { name: 'Beispielprojekt laden' }).click();
 for (let i = 0; i < 12; i++) {

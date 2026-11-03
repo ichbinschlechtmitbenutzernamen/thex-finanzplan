@@ -1,5 +1,5 @@
 /**
- * PDF-Zusammenfassung für die Thüringer Aufbaubank (v1.1).
+ * PDF-Zusammenfassung (v1.1; v1.3: Titel und Inhalt nach Planzweck – Mikrodarlehen/TAB, Gründungszuschuss, erste Schätzung).
  * Wird nur bei Bedarf geladen (dynamic import) und komplett im Browser erzeugt – keine Datenübertragung.
  */
 import { jsPDF } from 'jspdf';
@@ -7,6 +7,7 @@ import { autoTable, type RowInput, type CellHookData } from 'jspdf-autotable';
 import type { Plan } from '../model/types';
 import { berechne, jahr, stundensatz, type Ergebnis } from '../calc/plan';
 import { ergebnisStatus } from '../model/schritte';
+import { mdAktiv, gzAktiv, nurSchaetzung, zweckTitel, zweckKurz, zweckDateiKuerzel } from '../model/zweck';
 import { APP_VERSION } from '../version';
 
 const BLAU: [number, number, number] = [0, 82, 116];      // #005274 (thex.de)
@@ -27,8 +28,11 @@ export interface PdfErgebnis { blob: Blob; dateiname: string; seiten: number; do
 
 export async function erstellePdf(plan: Plan, jetzt = new Date()): Promise<PdfErgebnis> {
   const e = berechne(plan);
+  const md = mdAktiv(plan), gz = gzAktiv(plan), schaetzung = nurSchaetzung(plan);
+  const dokTitel = zweckTitel(plan);
+  const adressat = md && gz ? 'Zusammenfassung für TAB und fachkundige Stelle' : md ? 'Zusammenfassung für die Thüringer Aufbaubank' : gz ? 'Unterlagen Gründungszuschuss (fachkundige Stelle)' : 'Erste Schätzung – zur eigenen Orientierung';
   const doc = new jsPDF({ unit: 'mm', format: 'a4', compress: true });
-  doc.setProperties({ title: pdfText(`Finanzplan ${plan.projekt.name}`), subject: 'Finanzplan-Zusammenfassung für die Thüringer Aufbaubank', creator: `ThEx Finanzplan ${APP_VERSION}`, author: pdfText(plan.gruender.map(g => g.name).join(', ')) });
+  doc.setProperties({ title: pdfText(`${dokTitel}: ${plan.projekt.name}`), subject: pdfText(adressat), creator: `ThEx Finanzplan ${APP_VERSION}`, author: pdfText(plan.gruender.map(g => g.name).join(', ')) });
   const W = () => doc.internal.pageSize.getWidth(), H = () => doc.internal.pageSize.getHeight();
   const M = 15;
   let y = 0;
@@ -54,13 +58,15 @@ export async function erstellePdf(plan: Plan, jetzt = new Date()): Promise<PdfEr
     if (y + zeilen.length * size * 0.42 > H() - 18) neueSeite(plan.projekt.name || 'Finanzplan');
     doc.text(zeilen, M, y); y += zeilen.length * size * 0.42 + 2;
   };
-  const fehlerKasten = (titel: string, texte: string[]) => {
+  const fehlerKasten = (titel: string, texte: string[], warnung = false) => {
     doc.setFont('helvetica', 'normal'); doc.setFontSize(9);
     const zeilen = texte.flatMap(x => doc.splitTextToSize(t('• ' + x), W() - 2 * M - 10));
     const hh = 11 + zeilen.length * 4.2;
-    doc.setFillColor(253, 236, 234); doc.setDrawColor(...AMPEL.rot); doc.setLineWidth(0.8); doc.roundedRect(M, y, W() - 2 * M, hh, 2, 2, 'FD');
-    doc.setFont('helvetica', 'bold'); doc.setFontSize(12); doc.setTextColor(...AMPEL.rot); doc.text(t(titel), M + 5, y + 7);
-    doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(142, 27, 18); doc.text(zeilen, M + 5, y + 12.5);
+    const rand = warnung ? AMPEL.gelb : AMPEL.rot;
+    if (warnung) doc.setFillColor(255, 248, 225); else doc.setFillColor(253, 236, 234);
+    doc.setDrawColor(...rand); doc.setLineWidth(0.8); doc.roundedRect(M, y, W() - 2 * M, hh, 2, 2, 'FD');
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(12); doc.setTextColor(...(warnung ? [138, 83, 0] as [number, number, number] : AMPEL.rot)); doc.text(t(titel), M + 5, y + 7);
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(...(warnung ? [110, 66, 0] as [number, number, number] : [142, 27, 18] as [number, number, number])); doc.text(zeilen, M + 5, y + 12.5);
     y += hh + 6;
   };
   const tabelle = (head: string[] | null, body: (string | { content: string; styles?: object })[][], opt: { summen?: number[]; spalte0?: number; schrift?: number; neg?: boolean } = {}) => {
@@ -87,26 +93,31 @@ export async function erstellePdf(plan: Plan, jetzt = new Date()): Promise<PdfEr
   };
   const st = ergebnisStatus(plan);
   const fehlerW = e.warnungen.filter(w => w.fehler);
+  /** erste Schätzung: negative Liquidität nur als Warnhinweis */
+  const liqWarnung = e.warnungen.filter(w => !w.fehler && w.schwer && w.schritt === 'liquiditaet');
   const kd = e.kd, kapg = plan.einstellungen.rechtsform === 'KAPG';
 
   // ---------------- Deckblatt ----------------
-  kopf('Zusammenfassung für die Thüringer Aufbaubank');
+  kopf(adressat);
   y = 40;
-  doc.setTextColor(...GRAU); doc.setFont('helvetica', 'normal'); doc.setFontSize(10); doc.text(t('Finanzplan · Mikrodarlehen Thüringen'), M, y); y += 9;
+  doc.setTextColor(...GRAU); doc.setFont('helvetica', 'normal'); doc.setFontSize(10); doc.text(t(dokTitel), M, y); y += 9;
   doc.setTextColor(...BLAU); doc.setFont('helvetica', 'bold'); doc.setFontSize(22);
   const titel = doc.splitTextToSize(t(plan.projekt.name || 'Finanzplan (ohne Namen)'), W() - 2 * M); doc.text(titel, M, y); y += titel.length * 9;
   if (plan.projekt.vorhaben) { doc.setFont('helvetica', 'normal'); doc.setFontSize(11); doc.setTextColor(...TEXT); const v = doc.splitTextToSize(t(plan.projekt.vorhaben), W() - 2 * M); doc.text(v, M, y); y += v.length * 5 + 3; }
   doc.setFillColor(...LIME); doc.rect(M, y, 30, 1.2, 'F'); y += 8;
   if (fehlerW.length) fehlerKasten('FEHLER: Plan nicht einreichungsfähig', fehlerW.map(w => w.text));
-  const d1 = plan.darlehen[0];
+  if (liqWarnung.length) fehlerKasten('Hinweis: Liquidität negativ', liqWarnung.map(w => w.text), true);
+  const d1 = md ? plan.darlehen[0] : undefined;
   tabelle(null, [
     [kapg || plan.gruender.length > 1 ? 'Gründer/innen' : 'Gründer/in', plan.gruender.map(g => g.name + (plan.einstellungen.rechtsform === 'GBR' ? ` (${g.anteil} %)` : '')).join(', ') || '–'],
     ['Rechtsform', RF[plan.einstellungen.rechtsform] + (plan.einstellungen.kleinunternehmer ? ' · Kleinunternehmer' : '')],
     ['Branche', plan.projekt.branche || '–'], ['Standort / Gemeinde', plan.projekt.gemeinde || '–'], ['Anschrift', plan.projekt.anschrift || '–'],
     ['Kontakt', [plan.projekt.telefon, plan.projekt.email].filter(Boolean).join(' · ') || '–'],
     ['Gründungsmonat (Planbeginn)', plan.projekt.gruendungsmonat || '–'],
-    ['Beantragtes Mikrodarlehen', d1 ? `${eur(d1.betrag)} · ${d1.laufzeit} Monate · davon ${d1.tilgungsfrei} tilgungsfrei · Sollzins ${pct(d1.sollzins, 2)} · ${d1.art === 'annuitaet' ? 'Annuitätendarlehen' : 'Tilgungsdarlehen'}${plan.einstellungen.folgedarlehen ? ' · Folgedarlehen' : ''}` : '–'],
-    ['Stand der Planung', fehlerW.length ? `NICHT EINREICHUNGSFÄHIG (${fehlerW.length} Fehler) · Ergebnis ${st.text}` : `Ergebnis ${st.text}`],
+    ['Planzweck', zweckKurz(plan)],
+    ...(gz ? [['Unterlagen Gründungszuschuss', 'Kapitalbedarfsplan, Rentabilitätsvorschau (3 Jahre) und Liquiditätsplan (3 Jahre) – für die Stellungnahme der fachkundigen Stelle']] : []),
+    ...(!md ? [] : [['Beantragtes Mikrodarlehen', d1 ? `${eur(d1.betrag)} · ${d1.laufzeit} Monate · davon ${d1.tilgungsfrei} tilgungsfrei · Sollzins ${pct(d1.sollzins, 2)} · ${d1.art === 'annuitaet' ? 'Annuitätendarlehen' : 'Tilgungsdarlehen'}${plan.einstellungen.folgedarlehen ? ' · Folgedarlehen' : ''}` : '–']]),
+    ['Stand der Planung', schaetzung ? `Erste Schätzung, nicht zur Einreichung bestimmt · Ergebnis ${st.text}` : fehlerW.length ? `NICHT EINREICHUNGSFÄHIG (${fehlerW.length} Fehler) · Ergebnis ${st.text}` : `Ergebnis ${st.text}`],
     ['Erstellt', `${jetzt.toLocaleString('de-DE', { dateStyle: 'long', timeStyle: 'short', timeZone: 'Europe/Berlin' })} · ThEx Finanzplan ${APP_VERSION}`],
   ], { spalte0: 55, schrift: 9.5, neg: false });
 
@@ -116,7 +127,7 @@ export async function erstellePdf(plan: Plan, jetzt = new Date()): Promise<PdfEr
     ['Ergebnis vor Steuern J1', eur(e.jahre[0].ergebnisVorSteuern), `J2 ${eur(e.jahre[1].ergebnisVorSteuern)} · J3 ${eur(e.jahre[2].ergebnisVorSteuern)}`, e.jahre[0].ergebnisVorSteuern < 0],
     ['Liquiditätstiefpunkt', eur(e.liq.tiefpunkt), `im ${e.labels[e.liq.tiefpunktIdx]}`, e.liq.tiefpunkt < 0],
     ['Kapitalbedarf', eur(e.kapitalbedarf.summe), `Finanzierung ${eur(e.finanzierung)}`, e.finanzierung < e.kapitalbedarf.summe - 0.5],
-    ['KD-Auslastung (Plan-Jahr 2)', pct(kd.auslastung), `Grenze ${pct(plan.params.kdGrenze, 0)}`, kd.ampel === 'rot'],
+    md ? ['KD-Auslastung (Plan-Jahr 2)', pct(kd.auslastung), `Grenze ${pct(plan.params.kdGrenze, 0)}`, kd.ampel === 'rot'] : ['Liquidität Ende Jahr 3', eur(e.liq.kumuliert[35]), `Ende J1 ${eur(e.liq.kumuliert[11])} · J2 ${eur(e.liq.kumuliert[23])}`, e.liq.kumuliert[35] < 0],
     [kapg ? 'Ausschüttungen J2' : 'Ø Privatentnahme J1 / Monat', kapg ? eur(kd.ausschuettung2) : eur(jahr(e.privatentnahme, 1) / 12), kapg ? 'aus der Gesellschaft' : 'inkl. KV/PV, Rente, ESt'],
   ];
   const kw = (W() - 2 * M - 2 * 4) / 3, kh = 21;
@@ -131,19 +142,29 @@ export async function erstellePdf(plan: Plan, jetzt = new Date()): Promise<PdfEr
     doc.setFont('helvetica', 'normal'); doc.setFontSize(7); doc.setTextColor(...GRAU); doc.text(t(s), x + 4, yy + 17.5);
   });
   y += 2 * (kh + 4) + 4;
-  // KD-Kurzfazit mit Ampel
-  ampel(M + 4, y + 2, 2.6, kd.ampel);
-  doc.setFont('helvetica', 'bold'); doc.setFontSize(12); doc.setTextColor(...AMPEL[kd.ampel]); doc.text(t(AMPEL_TEXT[kd.ampel]), M + 12, y + 4);
-  doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(...TEXT);
-  doc.text(t(`KD-Grenze ${eur(kd.grenze)} · Kapitaldienst Mikrodarlehen ${eur(kd.kapitaldienst)} · max. tragbarer Darlehensbetrag ${eur(Math.floor(kd.maxDarlehen / 100) * 100)}`), M + 12, y + 9.5);
-  if (st.status !== 'bestaetigt') { doc.setTextColor(138, 83, 0); doc.text(t(`Hinweis: Ergebnis ${st.text}.`), M + 12, y + 14.5); }
+  if (md) {
+    // KD-Kurzfazit mit Ampel (nur Mikrodarlehen)
+    ampel(M + 4, y + 2, 2.6, kd.ampel);
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(12); doc.setTextColor(...AMPEL[kd.ampel]); doc.text(t(AMPEL_TEXT[kd.ampel]), M + 12, y + 4);
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(...TEXT);
+    doc.text(t(`KD-Grenze ${eur(kd.grenze)} · Kapitaldienst Mikrodarlehen ${eur(kd.kapitaldienst)} · max. tragbarer Darlehensbetrag ${eur(Math.floor(kd.maxDarlehen / 100) * 100)}`), M + 12, y + 9.5);
+    if (st.status !== 'bestaetigt') { doc.setTextColor(138, 83, 0); doc.text(t(`Hinweis: Ergebnis ${st.text}.`), M + 12, y + 14.5); }
+  } else {
+    const liqOk = e.liq.negMonate.length === 0;
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(12); doc.setTextColor(...(liqOk ? AMPEL.gruen : AMPEL.rot));
+    doc.text(t(liqOk ? 'Liquidität in allen 36 Monaten gesichert' : `Liquidität in ${e.liq.negMonate.length} von 36 Monaten negativ`), M, y + 4);
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(...TEXT);
+    doc.text(t(`Ergebnis vor Steuern: J1 ${eur(e.jahre[0].ergebnisVorSteuern)} · J2 ${eur(e.jahre[1].ergebnisVorSteuern)} · J3 ${eur(e.jahre[2].ergebnisVorSteuern)}`), M, y + 9.5);
+    if (st.status !== 'bestaetigt') { doc.setTextColor(138, 83, 0); doc.text(t(`Hinweis: Ergebnis ${st.text}.`), M, y + 14.5); }
+  }
   y += 22;
   doc.setFontSize(7.5); doc.setTextColor(...GRAU);
-  doc.text(doc.splitTextToSize(t('Diese Zusammenfassung wurde mit dem ThEx Finanzplan im Browser erstellt. Sie ist eine Rechenhilfe auf Basis der Angaben der Gründerin bzw. des Gründers und ersetzt weder Steuer- noch Finanzierungsberatung noch die Kreditprüfung der Thüringer Aufbaubank. Orientierungswerte in der App sind unverbindlich.'), W() - 2 * M), M, H() - 26);
+  const entscheider = md && gz ? 'die Kreditprüfung der Thüringer Aufbaubank noch die Stellungnahme der fachkundigen Stelle' : md ? 'die Kreditprüfung der Thüringer Aufbaubank' : gz ? 'die Stellungnahme der fachkundigen Stelle oder die Entscheidung der Agentur für Arbeit' : 'eine Gründungsberatung';
+  doc.text(doc.splitTextToSize(t(`Diese Zusammenfassung wurde mit dem ThEx Finanzplan im Browser erstellt. Sie ist eine Rechenhilfe auf Basis der Angaben der Gründerin bzw. des Gründers und ersetzt weder Steuer- noch Finanzierungsberatung noch ${entscheider}. Orientierungswerte in der App sind unverbindlich.`), W() - 2 * M), M, H() - 26);
 
   // ---------------- Rentabilität ----------------
-  neueSeite('Rentabilität');
-  h2('Rentabilitätsvorschau Jahr 1–3');
+  neueSeite(gz ? 'Rentabilitätsvorschau' : 'Rentabilität');
+  h2(gz ? 'Rentabilitätsvorschau (3 Jahre)' : 'Rentabilitätsvorschau Jahr 1–3');
   const J = e.jahre;
   const zeile = (l: string, f: (j: Ergebnis['jahre'][0]) => number) => [l, ...J.map(j => eur(f(j)))];
   tabelle(['Position', 'Jahr 1', 'Jahr 2', 'Jahr 3'], [
@@ -164,9 +185,9 @@ export async function erstellePdf(plan: Plan, jetzt = new Date()): Promise<PdfEr
   }
 
   // ---------------- Kapitalbedarf & Finanzierung ----------------
-  h2('Kapitalbedarf und Finanzierung');
+  h2(gz ? 'Kapitalbedarfsplan und Finanzierung' : 'Kapitalbedarf und Finanzierung');
   const kb = e.kapitalbedarf, em = plan.eigenmittel;
-  const fin: [string, number][] = [...plan.darlehen.filter(d => !d.bestehend && d.betrag > 0).map(d => [d.bez || 'Darlehen', d.betrag] as [string, number]),
+  const fin: [string, number][] = [...e.darlehen.map(x => x.d).filter(d => !d.bestehend && d.betrag > 0).map(d => [d.bez || 'Darlehen', d.betrag] as [string, number]),
     ['Eigenmittel bar', em.bar], ['Privatdarlehen', em.privatdarlehen], ['Sachzuschuss', em.sachzuschuss], ['Sacheinlage', em.sacheinlage]].filter(x => (x[1] as number) > 0) as [string, number][];
   const bed: [string, number][] = [['Investitionen', kb.invest], ['Einmalige Betriebskosten', kb.betriebskosten], ['Gründungskosten', kb.gruendungskosten]];
   const n = Math.max(bed.length, fin.length);
@@ -188,7 +209,8 @@ export async function erstellePdf(plan: Plan, jetzt = new Date()): Promise<PdfEr
     tabelle(['Darlehen / Jahr', 'Zins J1', 'Tilgung J1', 'Zins J2', 'Tilgung J2', 'Zins J3', 'Tilgung J3', 'Rest Ende J3'], aktiv.map(({ d, plan: tp }) => { const a = [1, 2, 3].map(j => jz(tp, j)); const rest = tp.filter(x => x.planMonat <= 36).slice(-1)[0]?.restEnde ?? d.betrag; return [d.bez || 'Darlehen', ...a.flatMap(x => [eur(x.zins), eur(x.tilg)]), eur(rest)]; }), { schrift: 7.5, neg: false });
   }
 
-  // ---------------- KD-Rechenweg ----------------
+  // ---------------- KD-Rechenweg (nur Mikrodarlehen) ----------------
+  if (md) {
   neueSeite('Kapitaldienstfähigkeit');
   h2('Kapitaldienstfähigkeit (Plan-Jahr 2) – Rechenweg');
   ampel(W() - M - 6, y - 3, 3.2, kd.ampel);
@@ -205,11 +227,13 @@ export async function erstellePdf(plan: Plan, jetzt = new Date()): Promise<PdfEr
   const sumIdx = kdRows.map((r, i) => (r[0].startsWith('=') || r[0].startsWith('Auslastung') ? i : -1)).filter(i => i >= 0);
   tabelle(['Rechenschritt', 'Betrag'], kdRows, { summen: sumIdx, spalte0: 130 });
   if (kapg) kd.tragfaehigkeit.forEach(x => absatz(`Private Tragfähigkeit ${x.name}: netto verfügbar ${eur(x.netto)} p. a. gegenüber privaten Kosten ${eur(x.bedarf)} p. a.`, 8.5, x.netto < x.bedarf ? AMPEL.rot : TEXT));
+  }
 
   // ---------------- Liquidität ----------------
-  neueSeite('Liquidität', true);
-  h2('Liquiditätsplan (brutto) – Jahresübersicht und Verlauf');
+  neueSeite(gz ? 'Liquiditätsplan' : 'Liquidität', true);
+  h2(gz ? 'Liquiditätsplan (3 Jahre, brutto) – Jahresübersicht und Verlauf' : 'Liquiditätsplan (brutto) – Jahresübersicht und Verlauf');
   if (fehlerW.length) fehlerKasten('FEHLER: Liquidität negativ', fehlerW.filter(w => w.schritt === 'liquiditaet').map(w => w.text));
+  if (liqWarnung.length) fehlerKasten('Hinweis: Liquidität negativ', liqWarnung.map(w => w.text), true);
   const L = e.liq;
   const liqZeilen: [string, number[]][] = [
     ['Einzahlungen gesamt', L.summeEin], ['  Umsatz brutto', L.einz.umsatzBrutto], ['  Darlehen', L.einz.darlehen],
@@ -273,7 +297,7 @@ export async function erstellePdf(plan: Plan, jetzt = new Date()): Promise<PdfEr
   if (st.gruende.length) st.gruende.forEach(g => absatz(`• Bitte prüfen: ${g}`, 8.5, [138, 83, 0]));
   if (!e.warnungen.length && !st.gruende.length) absatz('Keine Hinweise – alle automatischen Prüfungen ohne Auffälligkeiten.');
   else if (e.warnungen.length) tabelle(['Art', 'Hinweis'], [...fehlerW, ...e.warnungen.filter(w => !w.fehler)].map(w => [w.fehler ? { content: 'FEHLER', styles: { textColor: AMPEL.rot, fontStyle: 'bold' } } : w.schwer ? 'Kritisch' : w.plausi ? 'Plausibilität' : 'Hinweis', w.fehler ? { content: w.text, styles: { textColor: AMPEL.rot, fontStyle: 'bold' } } : w.text]), { spalte0: 26, schrift: 8, neg: false });
-  absatz('FEHLER (rot) machen den Plan nicht einreichungsfähig und müssen behoben werden. Plausibilitätshinweise sind automatische, nicht verbindliche Prüfungen. Sie sollen Rückfragen vorwegnehmen und blockieren die Planung nicht.', 7.5, GRAU);
+  absatz(schaetzung ? 'Erste Schätzung: Kritische Hinweise (z. B. negative Liquidität) blockieren nicht, müssten für einen Antrag aber behoben werden. Plausibilitätshinweise sind automatische, nicht verbindliche Prüfungen.' : 'FEHLER (rot) machen den Plan nicht einreichungsfähig und müssen behoben werden. Plausibilitätshinweise sind automatische, nicht verbindliche Prüfungen. Sie sollen Rückfragen vorwegnehmen und blockieren die Planung nicht.', 7.5, GRAU);
 
   // ---------------- Fußzeilen ----------------
   const seiten = doc.getNumberOfPages();
@@ -282,11 +306,11 @@ export async function erstellePdf(plan: Plan, jetzt = new Date()): Promise<PdfEr
     const w = doc.internal.pageSize.getWidth(), h = doc.internal.pageSize.getHeight();
     doc.setDrawColor(215, 224, 232); doc.setLineWidth(0.2); doc.line(M, h - 11, w - M, h - 11);
     doc.setFont('helvetica', 'normal'); doc.setFontSize(7); doc.setTextColor(...GRAU);
-    doc.text(t(`${plan.projekt.name || 'Finanzplan'} · ThEx Finanzplan ${APP_VERSION} · erstellt ${jetzt.toLocaleDateString('de-DE', { timeZone: 'Europe/Berlin' })} · Rechenhilfe, keine Kreditentscheidung`), M, h - 7);
+    doc.text(t(`${plan.projekt.name || 'Finanzplan'} · ThEx Finanzplan ${APP_VERSION} · erstellt ${jetzt.toLocaleDateString('de-DE', { timeZone: 'Europe/Berlin' })} · Rechenhilfe${md ? ', keine Kreditentscheidung' : ''}`), M, h - 7);
     doc.text(`Seite ${i} von ${seiten}`, w - M, h - 7, { align: 'right' });
     if (fehlerW.length) { doc.setFont('helvetica', 'bold'); doc.setFontSize(8); doc.setTextColor(...AMPEL.rot); doc.text(t('NICHT EINREICHUNGSFÄHIG – Liquidität negativ (siehe Hinweise)'), w / 2, h - 13, { align: 'center' }); }
   }
   const name = (plan.projekt.name || 'Finanzplan').replace(/[^\wÄÖÜäöüß\- ]+/g, '').trim().replace(/\s+/g, '_') || 'Finanzplan';
-  const dateiname = `Finanzplan_${name}_TAB_${jetzt.toISOString().slice(0, 10)}${fehlerW.length ? '_NICHT_EINREICHUNGSFAEHIG' : ''}.pdf`;
+  const dateiname = `Finanzplan_${name}_${zweckDateiKuerzel(plan)}_${jetzt.toISOString().slice(0, 10)}${fehlerW.length ? '_NICHT_EINREICHUNGSFAEHIG' : ''}.pdf`;
   return { blob: doc.output('blob'), dateiname, seiten, doc };
 }

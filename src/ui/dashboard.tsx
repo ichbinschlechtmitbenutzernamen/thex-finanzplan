@@ -4,7 +4,8 @@ import type { Ergebnis } from '../calc/plan';
 import { jahr, sum, privatKostenMonat } from '../calc/plan';
 import { Card, fmtEUR, fmtPct, Help, HTip, FehlerBox } from './fields';
 import type { ErgebnisStatus } from '../model/schritte';
-import { STEPS, stepById } from '../model/schritte';
+import { STEPS, schrittTitel } from '../model/schritte';
+import { mdAktiv, gzAktiv, zweckGewaehlt } from '../model/zweck';
 import { LineChart, BarChart, StackBar } from './charts';
 
 function Tile({ label, value, sub, tone }: { label: string; value: string; sub?: React.ReactNode; tone?: 'pos' | 'neg' | 'warn' }) {
@@ -37,14 +38,17 @@ export function Dashboard({ plan, e, gotoStep, status, pruefen = {}, onBestaetig
   const privat = [...privatItems.entries()].map(([name, value]) => ({ name, value })).filter(x => x.value > 0);
   if (svSt > 0) privat.push({ name: 'KV/PV, Rente, ESt (berechnet)', value: svSt });
   const d1 = plan.darlehen[0];
+  const md = mdAktiv(plan), gz = gzAktiv(plan);
+  const titel = (id: string) => schrittTitel(id, plan);
+  const pruefer = md && gz ? 'die TAB oder die fachkundige Stelle' : md ? 'die TAB' : gz ? 'die fachkundige Stelle' : 'eine Bank oder Beratung';
   return <div className="dashboard">
     {status && <div className={`status-bar`} data-testid="ergebnis-status">
       <span className={`kd-status ${status.status}`}>{status.status === 'bestaetigt' ? '✓' : status.status === 'veraltet' ? '↻' : '○'} Ergebnis {status.text}</span>
       <div className="grow">{status.gruende.length > 0 && <ul>{status.gruende.map(g => <li key={g}>{g}</li>)}</ul>}
-        {pflichtOffen.length > 0 && <small className="muted">Bestätigen ist möglich, sobald alle Pflichtschritte abgeschlossen und geprüft sind (offen: {pflichtOffen.map(s => s.titel).join(', ')}).</small>}
+        {pflichtOffen.length > 0 && <small className="muted">Bestätigen ist möglich, sobald alle Pflichtschritte abgeschlossen und geprüft sind (offen: {pflichtOffen.map(s => titel(s.id)).join(', ')}).</small>}
         {planFehler.length > 0 && <small className="neg" style={{ display: "block", marginTop: 4 }} data-testid="bestaetigen-gesperrt"><b>Bestätigen gesperrt:</b> Der Plan enthält {planFehler.length === 1 ? 'einen Fehler' : `${planFehler.length} Fehler`} (negative Liquidität) und ist nicht einreichungsfähig.</small>}</div>
-      {onBestaetigen && <button className="btn primary small" disabled={pflichtOffen.length > 0 || planFehler.length > 0} onClick={onBestaetigen} data-testid="ergebnis-bestaetigen">{status.status === 'offen' ? 'Ergebnis bestätigen' : 'Ergebnis erneut bestätigen'}</button>}
-      {onPdf && <button className="btn ghost small" onClick={onPdf}>PDF für TAB</button>}
+      {onBestaetigen && <button className="btn primary small" disabled={pflichtOffen.length > 0 || planFehler.length > 0 || !zweckGewaehlt(plan)} onClick={onBestaetigen} data-testid="ergebnis-bestaetigen">{status.status === 'offen' ? 'Ergebnis bestätigen' : 'Ergebnis erneut bestätigen'}</button>}
+      {onPdf && <button className="btn ghost small" onClick={onPdf}>{md ? 'PDF für TAB' : 'PDF erstellen'}</button>}
     </div>}
     <FehlerBox warnungen={e.warnungen} onGoto={gotoStep} />
     <div className="tiles">
@@ -55,7 +59,7 @@ export function Dashboard({ plan, e, gotoStep, status, pruefen = {}, onBestaetig
       <Tile label={kapg ? 'Ausschüttungen Jahr 2' : 'Ø Privatentnahme / Monat (J1)'} value={kapg ? fmtEUR(kd.ausschuettung2) : fmtEUR(jahr(e.privatentnahme, 1) / 12)} sub={kapg ? 'aus der Gesellschaft' : 'inkl. KV/PV, Rente, ESt abzgl. Einnahmen'} />
     </div>
 
-    <section className={`card kd ${kd.ampel} ${veraltet ? 'veraltet-st' : ''}`}>
+    {md && <section className={`card kd ${kd.ampel} ${veraltet ? 'veraltet-st' : ''}`}>
       <div className="kd-head">
         <div className={`ampel ${kd.ampel}`} aria-label={`Ampel ${kd.ampel}`}><i className="r" /><i className="y" /><i className="g" /></div>
         <div>
@@ -92,10 +96,11 @@ export function Dashboard({ plan, e, gotoStep, status, pruefen = {}, onBestaetig
         {kapg && kd.tragfaehigkeit.map(t => <p key={t.name} className={t.netto < t.bedarf ? 'neg' : 'pos'}>Private Tragfähigkeit {t.name}: netto verfügbar {fmtEUR(t.netto)} p. a. gegenüber privaten Kosten {fmtEUR(t.bedarf)} p. a.</p>)}
         <p className="muted small">Max. tragbarer Betrag: Betrag, bei dem der Kapitaldienst genau {fmtPct(plan.params.kdGrenze, 0)} der KD-Grenze erreicht (gleiche Konditionen; die geringere Steuer durch höhere Zinsen ist vernachlässigt).</p>
       </details>
-    </section>
+    </section>}
+    {!md && gz && <p className="muted small" data-testid="gz-hinweis">Für den Gründungszuschuss werden Kapitalbedarfsplan, Rentabilitätsvorschau und Liquiditätsplan (3 Jahre) benötigt – alle drei sind unten bzw. im PDF enthalten. Eine Prüfung der Kapitaldienstfähigkeit entfällt ohne Mikrodarlehen.</p>}
 
-    {(e.warnungen.length > 0 || Object.keys(pruefen).length > 0) && <Card title={`Hinweise (${e.warnungen.length + Object.keys(pruefen).filter(k => k !== 'ergebnis').length})`} help="Fehler (rot) müssen behoben werden, bevor der Plan bestätigt und eingereicht werden kann. Alle übrigen Hinweise blockieren nichts – sie zeigen mögliche Lücken oder ungewöhnliche Werte, die die TAB wahrscheinlich nachfragen würde."><ul className="warnlist" data-testid="dashboard-hinweise">
-      {Object.keys(pruefen).filter(k => k !== 'ergebnis').map(k => <li key={'p' + k}><span><span className="warn-tag">Bitte prüfen</span>„{stepById(k)?.titel}“ – geändert: {pruefen[k].map(x => stepById(x)?.titel).join(', ')}</span><button className="btn link" onClick={() => gotoStep(k)}>zum Schritt →</button></li>)}
+    {(e.warnungen.length > 0 || Object.keys(pruefen).length > 0) && <Card title={`Hinweise (${e.warnungen.length + Object.keys(pruefen).filter(k => k !== 'ergebnis').length})`} help={`Fehler (rot) müssen behoben werden, bevor der Plan bestätigt und eingereicht werden kann. Alle übrigen Hinweise blockieren nichts – sie zeigen mögliche Lücken oder ungewöhnliche Werte, die ${pruefer} wahrscheinlich nachfragen würde.`}><ul className="warnlist" data-testid="dashboard-hinweise">
+      {Object.keys(pruefen).filter(k => k !== 'ergebnis').map(k => <li key={'p' + k}><span><span className="warn-tag">Bitte prüfen</span>„{titel(k)}“ – geändert: {pruefen[k].map(titel).join(', ')}</span><button className="btn link" onClick={() => gotoStep(k)}>zum Schritt →</button></li>)}
       {planFehler.map((w, i) => <li key={'f' + i} className="schwer fehler"><span><span className="warn-tag fehler">Fehler</span>{w.text}</span><button className="btn link" onClick={() => gotoStep(w.schritt)}>zur Eingabe →</button></li>)}
       {hinweise.map((w, i) => <li key={i} className={w.schwer ? 'schwer' : ''}><span>{w.plausi && <span className="warn-tag">Plausibilität</span>}{w.text}</span><button className="btn link" onClick={() => gotoStep(sprungZiel(w))}>{sprungZiel(w) === 'szenarien' ? 'Szenarien ansehen →' : 'zur Eingabe →'}</button></li>)}
     </ul></Card>}

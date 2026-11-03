@@ -3,6 +3,7 @@ import type { Plan } from '../model/types';
 import { berechne, jahr, sum, kontoAnalyse, privatKostenMonat, stundensatz, sollIstZeilen, type Ergebnis } from '../calc/plan';
 import { getPath, setPath, migriere } from './storage';
 import { ergebnisStatus } from '../model/schritte';
+import { mdAktiv, gzAktiv, zweckTitel, zweckKurz, zweckGewaehlt } from '../model/zweck';
 
 export const FORMAT_ID = 'THEX-FINANZPLAN';
 import { APP_VERSION } from '../version';
@@ -79,10 +80,11 @@ export async function exportiere(plan: Plan): Promise<{ blob: Blob; dateiname: s
   const b = new Book(plan);
   const kapg = plan.einstellungen.rechtsform === 'KAPG';
   const pz = (path: string) => path; // Lesbarkeit
+  const md = mdAktiv(plan), gz = gzAktiv(plan);
 
   // ---------- 1 Dashboard ----------
   const d = b.sheet('Dashboard', [38, 18, 18, 18, 4, 30, 18]);
-  b.titel(d, `Finanzplan ${plan.projekt.name || '(ohne Namen)'}`, `${RF_TEXT[plan.einstellungen.rechtsform]} · Gründung ${plan.projekt.gruendungsmonat} · Export ${new Date().toLocaleString('de-DE')} · ThEx Finanzplan ${APP_VERSION}`);
+  b.titel(d, `${zweckTitel(plan)}: ${plan.projekt.name || '(ohne Namen)'}`, `Planzweck: ${zweckKurz(plan)} · ${RF_TEXT[plan.einstellungen.rechtsform]} · Gründung ${plan.projekt.gruendungsmonat} · Export ${new Date().toLocaleString('de-DE')} · ThEx Finanzplan ${APP_VERSION}`);
   b.kopf(d, 4, ['Kennzahl', 'Jahr 1', 'Jahr 2', 'Jahr 3']);
   const kz: [string, keyof Ergebnis['jahre'][0]][] = [['Umsatz (netto)', 'umsatz'], ['Betriebsergebnis', 'betriebsergebnis'], ['Ergebnis vor Steuern', 'ergebnisVorSteuern'], [kapg ? 'GewSt + KSt' : 'Gewerbesteuer', 'betrieblicheSteuern'], ['Ergebnis nach betrieblichen Steuern', 'ergebnisNachSteuern']];
   kz.forEach(([l, k], i) => { b.wert(d, 5 + i, 1, l); e.jahre.forEach((j, ji) => b.wert(d, 5 + i, 2 + ji, j[k] as number, EUR0)); });
@@ -94,18 +96,24 @@ export async function exportiere(plan: Plan): Promise<{ blob: Blob; dateiname: s
     ['Ø Privatentnahme Jahr 1 / Monat', jahr(e.privatentnahme, 1) / 12, EUR0],
   ];
   lz.forEach(([l, v, f]) => { b.wert(d, r, 1, l); b.wert(d, r, 2, v, f); r++; });
-  // KD-Block rechts
-  b.kopf(d, 4, ['Kapitaldienstfähigkeit (Plan-Jahr 2)', ''], 6);
-  const kd = e.kd;
-  const kdz: [string, any, string?][] = [['KD-Grenze', kd.grenze, EUR0], ['Kapitaldienst Darlehen 1', kd.kapitaldienst, EUR0], ['Auslastung', isFinite(kd.auslastung) ? kd.auslastung : 'n. def.', PCT], ['Grenzwert', plan.params.kdGrenze, PCT], ['Max. tragbarer Darlehensbetrag', kd.maxDarlehen, EUR0]];
-  kdz.forEach(([l, v, f], i) => { b.wert(d, 5 + i, 6, l); b.wert(d, 5 + i, 7, v, f); });
-  const amp = d.getCell(11, 6); d.mergeCells(11, 6, 12, 7);
-  amp.value = kd.ampel === 'gruen' ? 'KD GEGEBEN' : kd.ampel === 'gelb' ? 'KD GEGEBEN (KNAPP)' : 'KD NICHT GEGEBEN';
-  amp.font = { bold: true, size: 14, color: { argb: 'FFFFFFFF' } }; amp.alignment = { horizontal: 'center', vertical: 'middle' };
-  amp.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: kd.ampel === 'gruen' ? 'FF2E7D32' : kd.ampel === 'gelb' ? 'FFF9A825' : 'FFC62828' } };
   const est = ergebnisStatus(plan);
-  const stc = d.getCell(13, 6); d.mergeCells(13, 6, 13, 7);
+  const stZeile = md ? 13 : 5;
+  const kd = e.kd;
+  if (md) {
+    // KD-Block rechts (nur mit Planzweck Mikrodarlehen)
+    b.kopf(d, 4, ['Kapitaldienstfähigkeit (Plan-Jahr 2)', ''], 6);
+    const kdz: [string, any, string?][] = [['KD-Grenze', kd.grenze, EUR0], ['Kapitaldienst Darlehen 1', kd.kapitaldienst, EUR0], ['Auslastung', isFinite(kd.auslastung) ? kd.auslastung : 'n. def.', PCT], ['Grenzwert', plan.params.kdGrenze, PCT], ['Max. tragbarer Darlehensbetrag', kd.maxDarlehen, EUR0]];
+    kdz.forEach(([l, v, f], i) => { b.wert(d, 5 + i, 6, l); b.wert(d, 5 + i, 7, v, f); });
+    const amp = d.getCell(11, 6); d.mergeCells(11, 6, 12, 7);
+    amp.value = kd.ampel === 'gruen' ? 'KD GEGEBEN' : kd.ampel === 'gelb' ? 'KD GEGEBEN (KNAPP)' : 'KD NICHT GEGEBEN';
+    amp.font = { bold: true, size: 14, color: { argb: 'FFFFFFFF' } }; amp.alignment = { horizontal: 'center', vertical: 'middle' };
+    amp.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: kd.ampel === 'gruen' ? 'FF2E7D32' : kd.ampel === 'gelb' ? 'FFF9A825' : 'FFC62828' } };
+  } else {
+    b.kopf(d, 4, ['Status', ''], 6);
+  }
+  const stc = d.getCell(stZeile, 6); d.mergeCells(stZeile, 6, stZeile, 7);
   stc.value = est.fehler.length ? `NICHT EINREICHUNGSFÄHIG · Ergebnis ${est.text}` : `Ergebnis ${est.text}`; stc.font = { bold: true, color: { argb: est.fehler.length ? 'FFC62828' : est.status === 'bestaetigt' ? 'FF2E7D32' : 'FF8A5300' } };
+  if (gz) { const c = d.getCell(stZeile + 2, 6); c.value = 'Gründungszuschuss: Kapitalbedarfsplan (Blatt Investitionen_Kapitalbedarf), Rentabilitätsvorschau (Rentabilitaet), Liquiditätsplan 3 Jahre (Liquiditaet)'; c.alignment = { wrapText: true, vertical: 'top' }; d.mergeCells(stZeile + 2, 6, stZeile + 4, 7); }
   r += 1; b.kopf(d, r, ['Hinweise / Warnungen', '']); r++;
   est.gruende.forEach(g => { const c = b.wert(d, r++, 1, `• Bitte prüfen: ${g}`); c.font = { color: { argb: 'FF8A5300' } }; });
   if (!e.warnungen.length) { b.wert(d, r++, 1, 'Keine Warnungen.'); }
@@ -121,7 +129,8 @@ export async function exportiere(plan: Plan): Promise<{ blob: Blob; dateiname: s
   const projektFelder: [string, string, Typ, string?, string[]?][] = [
     ['Projekt / Firmenname', 'projekt.name', 's'], ['Vorhaben', 'projekt.vorhaben', 's'], ['Anschrift', 'projekt.anschrift', 's'], ['Telefon', 'projekt.telefon', 's'], ['E-Mail', 'projekt.email', 's'],
     ['Branche', 'projekt.branche', 's'], ['Gemeinde', 'projekt.gemeinde', 's'], ['Gründungsmonat (JJJJ-MM)', 'projekt.gruendungsmonat', 's'],
-    ['Rechtsform (EU/FREI/GBR/KAPG)', 'einstellungen.rechtsform', 'e', undefined, ['EU', 'FREI', 'GBR', 'KAPG']], ['Kleinunternehmer', 'einstellungen.kleinunternehmer', 'b'], ['Folgedarlehen', 'einstellungen.folgedarlehen', 'b'],
+    ['Rechtsform (EU/FREI/GBR/KAPG)', 'einstellungen.rechtsform', 'e', undefined, ['EU', 'FREI', 'GBR', 'KAPG']], ['Kleinunternehmer', 'einstellungen.kleinunternehmer', 'b'], ...(md ? [['Folgedarlehen', 'einstellungen.folgedarlehen', 'b']] as [string, string, Typ][] : []),
+    ['Planzweck: Erste Schätzung / Orientierung', 'zweck.orientierung', 'b'], ['Planzweck: Gründungszuschuss (Agentur für Arbeit)', 'zweck.gz', 'b'], ['Planzweck: Thüringer Mikrodarlehen (TAB)', 'zweck.md', 'b'],
   ];
   projektFelder.forEach(([l, path, t, f, li], i) => { b.wert(pj, 3 + i, 1, l); b.input(pj, 3 + i, 2, path, t, l, f, li); });
   r = 4 + projektFelder.length;
@@ -130,7 +139,7 @@ export async function exportiere(plan: Plan): Promise<{ blob: Blob; dateiname: s
     ['Gewerbesteuer-Hebesatz (4,7 = 470 %)', 'hebesatz', '0.00'], ['KV allgemeiner Satz', 'kvSatz', PCT], ['KV Zusatzbeitrag (pauschal)', 'kvZusatz', '0.00%'], ['KV Krankengeld', 'kvKrankengeld', '0.00%'],
     ['PV kinderlos', 'pvKinderlos', '0.00%'], ['PV mit Kind', 'pvKind', '0.00%'], ['KV Mindestbemessung / Monat', 'kvMindestBemessungMonat', EUR], ['BBG KV/PV p. a.', 'kvBbg', EUR0],
     ['GRV Satz', 'grvSatz', PCT], ['BBG GRV p. a.', 'grvBbg', EUR0], ['GRV Regelbeitrag / Monat', 'grvRegelbeitrag', EUR], ['AG-Anteil SV-pflichtig', 'agSv', PCT], ['AG-Anteil Minijob', 'agMinijob', PCT],
-    ['KD-Grenzwert', 'kdGrenze', PCT], ['KD gelbe Zone ab', 'kdGelb', PCT],
+    ...(md ? [['KD-Grenzwert', 'kdGrenze', PCT], ['KD gelbe Zone ab', 'kdGelb', PCT]] as [string, keyof Plan['params'], string][] : []),
   ];
   par.forEach(([l, k, f]) => { b.wert(pj, r, 1, l); b.input(pj, r, 2, `params.${k}`, 'n', l, f); r++; });
   b.schuetzen(pj);
@@ -203,7 +212,7 @@ export async function exportiere(plan: Plan): Promise<{ blob: Blob; dateiname: s
 
   // ---------- 6 Investitionen / Kapitalbedarf ----------
   const iv = b.sheet('Investitionen_Kapitalbedarf', [34, 14, 9, 11, 13, 9]);
-  b.titel(iv, 'Kapitalbedarf: Investitionen, einmalige Betriebs- und Gründungskosten');
+  b.titel(iv, gz ? 'Kapitalbedarfsplan: Investitionen, einmalige Betriebs- und Gründungskosten' : 'Kapitalbedarf: Investitionen, einmalige Betriebs- und Gründungskosten');
   r = 4;
   b.kopf(iv, r++, ['Investition (AHK)', 'Netto', 'USt', 'Monat', 'ND (Jahre)', 'GWG']);
   plan.invest.forEach((x, i) => { b.input(iv, r, 1, `invest.${i}.bez`, 's', `Invest ${i + 1}`); b.input(iv, r, 2, `invest.${i}.netto`, 'n', `Invest ${i + 1} netto`, EUR); b.input(iv, r, 3, `invest.${i}.ust`, 'n', `Invest ${i + 1} USt`, '0%'); b.input(iv, r, 4, `invest.${i}.monat`, 'n', `Invest ${i + 1} Monat`); b.input(iv, r, 5, `invest.${i}.ndJahre`, 'n', `Invest ${i + 1} ND`); b.input(iv, r, 6, `invest.${i}.gwg`, 'b', `Invest ${i + 1} GWG`); r++; });
@@ -241,18 +250,21 @@ export async function exportiere(plan: Plan): Promise<{ blob: Blob; dateiname: s
 
   // ---------- 8 Darlehen ----------
   const dl = b.sheet('Darlehen', [30, 14, 14, 14, 14, 14, 14]);
-  b.titel(dl, 'Darlehen und Finanzierung', 'Darlehen 1 = Mikrodarlehen (KD-relevant). Tilgungsdarlehen: konstante Tilgung; Annuität: konstante Rate.');
+  b.titel(dl, gz && !md ? 'Finanzierung (Kapitalbedarfsplan)' : 'Darlehen und Finanzierung', md ? 'Darlehen 1 = Mikrodarlehen (KD-relevant). Tilgungsdarlehen: konstante Tilgung; Annuität: konstante Rate.' : 'Ohne Planzweck Mikrodarlehen: Darlehen 1 (Mikrodarlehen) ist ausgeblendet und wird nicht gerechnet. Tilgungsdarlehen: konstante Tilgung; Annuität: konstante Rate.');
+  const dIdx = plan.darlehen.map((_, i) => i).filter(i => md || i > 0);
   r = 4;
   const dfelder: [string, string, Typ, string?, string[]?][] = [['Bezeichnung', 'bez', 's'], ['Betrag', 'betrag', 'n', EUR0], ['Laufzeit (Monate, inkl. tilgungsfrei)', 'laufzeit', 'n'], ['Tilgungsfreie Monate', 'tilgungsfrei', 'n'], ['Sollzins p. a.', 'sollzins', 'n', '0.00%'], ['Effektivzins p. a. (Info)', 'effzins', 'n', '0.00%'], ['Auszahlung im Planmonat', 'auszahlungMonat', 'n'], ['Art (tilgung/annuitaet)', 'art', 'e', undefined, ['tilgung', 'annuitaet']], ['Bestehender Kredit', 'bestehend', 'b']];
-  b.kopf(dl, r++, ['Konditionen', ...plan.darlehen.map((x, i) => `Darlehen ${i + 1}`)]);
-  dfelder.forEach(([l, k, t, f, li]) => { b.wert(dl, r, 1, l); plan.darlehen.forEach((_, i) => b.input(dl, r, 2 + i, `darlehen.${i}.${k}`, t, `Darlehen ${i + 1} ${l}`, f, li)); r++; });
+  if (dIdx.length) {
+    b.kopf(dl, r++, ['Konditionen', ...dIdx.map(i => `Darlehen ${i + 1}`)]);
+    dfelder.forEach(([l, k, t, f, li]) => { b.wert(dl, r, 1, l); dIdx.forEach((i, c) => b.input(dl, r, 2 + c, `darlehen.${i}.${k}`, t, `Darlehen ${i + 1} ${l}`, f, li)); r++; });
+  } else { b.wert(dl, r++, 1, 'Keine Darlehen geplant.'); }
   r++;
   b.kopf(dl, r++, ['Eigenmittel', 'Betrag', 'Planmonat']);
   ([['Barmittel / Einlage', 'bar', 'barMonat'], ['Privatdarlehen', 'privatdarlehen', 'privatdarlehenMonat'], ['Sachmittelzuschuss (z. B. Jobcenter)', 'sachzuschuss', 'sachzuschussMonat']] as const)
     .forEach(([l, k, km]) => { b.wert(dl, r, 1, l); b.input(dl, r, 2, `eigenmittel.${k}`, 'n', l, EUR0); b.input(dl, r, 3, `eigenmittel.${km}`, 'n', `${l} Monat`); r++; });
   b.wert(dl, r, 1, 'Sacheinlagen (Wert, nicht liquiditätswirksam)'); b.input(dl, r, 2, 'eigenmittel.sacheinlage', 'n', 'Sacheinlage', EUR0); r += 2;
   e.darlehen.forEach((x, i) => {
-    if (!x.plan.length) return;
+    if (!x.plan.length || (i === 0 && !md)) return;
     b.kopf(dl, r++, [`Tilgungsplan Darlehen ${i + 1}: ${x.d.bez}`, 'Planmonat', 'Restschuld Anfang', 'Zins', 'Tilgung', 'Rate', 'Restschuld Ende']);
     x.plan.forEach(z => { b.wert(dl, r, 1, `Darlehensmonat ${z.k}`); b.wert(dl, r, 2, z.planMonat); [z.restAnfang, z.zins, z.tilgung, z.rate, z.restEnde].forEach((v, c) => b.wert(dl, r, 3 + c, v, EUR)); r++; });
     r++;
@@ -261,7 +273,7 @@ export async function exportiere(plan: Plan): Promise<{ blob: Blob; dateiname: s
 
   // ---------- 9 Rentabilität ----------
   const rv = b.sheet('Rentabilitaet', [36, ...Array(23).fill(12)]);
-  b.titel(rv, 'Rentabilitätsvorschau', 'Jahr 1 monatlich, Jahr 2 und 3 quartalsweise (netto).');
+  b.titel(rv, gz ? 'Rentabilitätsvorschau (3 Jahre)' : 'Rentabilitätsvorschau', 'Jahr 1 monatlich, Jahr 2 und 3 quartalsweise (netto).');
   b.kopf(rv, 4, ['Position', ...perioden(e.labels)]);
   r = 5;
   const neg = (a: number[]) => a.map(x => -x);
@@ -278,7 +290,7 @@ export async function exportiere(plan: Plan): Promise<{ blob: Blob; dateiname: s
 
   // ---------- 10 Liquidität ----------
   const lq = b.sheet('Liquiditaet', [40, ...Array(23).fill(12)]);
-  b.titel(lq, 'Liquiditätsplan (brutto)');
+  b.titel(lq, gz ? 'Liquiditätsplan 3 Jahre (brutto)' : 'Liquiditätsplan (brutto)');
   b.kopf(lq, 4, ['Position', ...perioden(e.labels)]);
   r = 5;
   const L = e.liq;
@@ -318,6 +330,7 @@ export async function exportiere(plan: Plan): Promise<{ blob: Blob; dateiname: s
   });
   b.schuetzen(sa);
 
+  if (md) {
   // ---------- 13 KD ----------
   const kdw = b.sheet('KD_Pruefung', [62, 18]);
   b.titel(kdw, 'Kapitaldienstfähigkeit – Plan-Jahr 2 (Monate 13–24)', `Grenzwert ${(plan.params.kdGrenze * 100).toFixed(0)} % · gelbe Zone ab ${(plan.params.kdGelb * 100).toFixed(0)} %`);
@@ -330,10 +343,11 @@ export async function exportiere(plan: Plan): Promise<{ blob: Blob; dateiname: s
   ];
   kdRows.forEach(([l, v, bo]) => { b.wert(kdw, r, 1, l, undefined, !!bo); b.wert(kdw, r, 2, v, EUR, !!bo); r++; });
   b.wert(kdw, r, 1, '(10) Auslastung = (9) / (8)', undefined, true); b.wert(kdw, r, 2, isFinite(kd.auslastung) ? kd.auslastung : 'nicht definiert', PCT, true); r++;
-  const ac = kdw.getCell(r, 1); kdw.mergeCells(r, 1, r, 2); ac.value = amp.value; ac.fill = amp.fill; ac.font = amp.font; ac.alignment = { horizontal: 'center' }; r += 2;
+  const ac = kdw.getCell(r, 1); kdw.mergeCells(r, 1, r, 2); ac.value = kd.ampel === 'gruen' ? 'KD GEGEBEN' : kd.ampel === 'gelb' ? 'KD GEGEBEN (KNAPP)' : 'KD NICHT GEGEBEN'; ac.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: kd.ampel === 'gruen' ? 'FF2E7D32' : kd.ampel === 'gelb' ? 'FFF9A825' : 'FFC62828' } }; ac.font = { bold: true, size: 14, color: { argb: 'FFFFFFFF' } }; ac.alignment = { horizontal: 'center' }; r += 2;
   b.wert(kdw, r, 1, `Max. tragbarer Darlehensbetrag bei ${(plan.params.kdGrenze * 100).toFixed(0)} % Auslastung (gleiche Konditionen)`); b.wert(kdw, r, 2, kd.maxDarlehen, EUR0); r++;
   if (kapg) kd.tragfaehigkeit.forEach(t => { b.wert(kdw, r, 1, `Private Tragfähigkeit ${t.name}: netto verfügbar / Bedarf`); b.wert(kdw, r, 2, `${Math.round(t.netto)} € / ${Math.round(t.bedarf)} €`); r++; });
   b.schuetzen(kdw);
+  }
 
   // ---------- optionale Blätter ----------
   if (plan.gruender.some(g => g.hb.monate.some(m => m.ein || m.ende))) {
@@ -358,7 +372,7 @@ export async function exportiere(plan: Plan): Promise<{ blob: Blob; dateiname: s
       .forEach(([l, v, f]) => { b.wert(sw, r, 1, l); b.wert(sw, r, 2, v, f); r++; });
     b.schuetzen(sw);
   }
-  if (plan.einstellungen.folgedarlehen) {
+  if (md && plan.einstellungen.folgedarlehen) {
     const si = b.sheet('Soll_Ist', [36, 16, 16, 16, 12]);
     const n = plan.sollIst.monate;
     b.titel(si, `Soll-Ist-Vergleich Monate 1–${n}`);
@@ -366,7 +380,7 @@ export async function exportiere(plan: Plan): Promise<{ blob: Blob; dateiname: s
     sollIstZeilen(e).forEach(([k, l, a], i) => { const soll = sum(a, 0, n); const ist = plan.sollIst.ist[k] ?? 0; b.wert(si, 4 + i, 1, l); b.wert(si, 4 + i, 2, soll, EUR0); b.input(si, 4 + i, 3, `sollIst.ist.${k}`, 'n', `Ist ${l}`, EUR0); b.wert(si, 4 + i, 4, ist - soll, EUR0); b.wert(si, 4 + i, 5, soll ? (ist - soll) / soll : null, PCT); });
     b.schuetzen(si);
   }
-  if (plan.meta.pruefer || plan.gruender.some(g => g.ka.monate.some(m => m.ein || m.ende)) || plan.pruefung.vermerk) {
+  if (md && (plan.meta.pruefer || plan.gruender.some(g => g.ka.monate.some(m => m.ein || m.ende)) || plan.pruefung.vermerk)) {
     const pr = b.sheet('Pruefung', [40, 14, 30, 14, 14]);
     b.titel(pr, 'Prüfung (Kreditprüfer): Kontoauszugsanalyse und Vermerk');
     r = 3;
@@ -401,7 +415,7 @@ export async function exportiere(plan: Plan): Promise<{ blob: Blob; dateiname: s
 
 // ===================== Import =====================
 export interface Aenderung { path: string; label: string; alt: any; neu: any }
-export interface ImportErgebnis { plan: Plan; aenderungen: Aenderung[]; meta: { schemaVersion: number; appVersion: string; exportiert: string; hashOk: boolean } }
+export interface ImportErgebnis { plan: Plan; aenderungen: Aenderung[]; meta: { schemaVersion: number; appVersion: string; exportiert: string; hashOk: boolean; /** ältere Datei (v1.0–v1.2) ohne Planzweck → Mikrodarlehen voreingestellt */ zweckErgaenzt: boolean } }
 
 function zellwert(v: any): any {
   if (v && typeof v === 'object') { if ('result' in v) return v.result; if ('richText' in v) return v.richText.map((t: any) => t.text).join(''); if ('text' in v) return v.text; }
@@ -432,5 +446,8 @@ export async function importiere(data: ArrayBuffer): Promise<ImportErgebnis> {
     try { setPath(plan, path, v); } catch { continue; }
     aenderungen.push({ path, label, alt, neu: v });
   }
-  return { plan, aenderungen, meta: { schemaVersion: Number(zellwert(dw.getCell('A2').value)), appVersion: String(zellwert(dw.getCell('A3').value)), exportiert: String(zellwert(dw.getCell('A4').value)), hashOk } };
+  // Planzweck: mindestens einer muss gewählt bleiben – sonst bleibt der Zweck aus dem Datenblock
+  if (!zweckGewaehlt(plan)) { plan.zweck = migriere(original).zweck; for (let i = aenderungen.length - 1; i >= 0; i--) if (aenderungen[i].path.startsWith('zweck.')) aenderungen.splice(i, 1); }
+  else if (aenderungen.some(a => a.path.startsWith('zweck.'))) plan.meta.zweckErgaenzt = false;
+  return { plan, aenderungen, meta: { schemaVersion: Number(zellwert(dw.getCell('A2').value)), appVersion: String(zellwert(dw.getCell('A3').value)), exportiert: String(zellwert(dw.getCell('A4').value)), hashOk, zweckErgaenzt: !!plan.meta.zweckErgaenzt } };
 }

@@ -57,3 +57,9 @@ Danach wurde die Kopie mit LibreOffice headless neu berechnet und verglichen. Di
 * **Stundensatz:** Die Vorlage setzt AfA an. Die App setzt für die Liquiditätssicht die Tilgung an und berücksichtigt die Auslastung. Die Planwerte sind deshalb nicht 1:1 mit der Vorlage vergleichbar.
 * **Plausibilitätsschwellen und Orientierungswerte** stammen nicht aus der Vorlage. Es sind eigene, unverbindliche Annahmen, die fachlich bestätigt werden müssen.
 * **Szenarien** gibt es in der Vorlage nicht.
+
+## Ergänzungen in v1.3
+* **Planzweck** gibt es in der Vorlage nicht. Die Vorlage ist immer auf das Mikrodarlehen ausgerichtet. Ist das Mikrodarlehen nicht als Zweck gewählt, rechnet die App Darlehen 1 (Mikrodarlehen) mit 0 € und lässt KD-Prüfung, Tilgungsplan des Mikrodarlehens, Kontoauszugsanalyse und Soll-Ist weg. Weitere Darlehen, Eigenmittel und Liquidität rechnet sie wie die Vorlage.
+* **KV/PV-Mindestbeitrag:** Wie in der Vorlage wird für freiwillig gesetzlich Versicherte die Mindestbemessung angesetzt (1.318,33 €/Monat, 21,7 % inkl. PV-Kinderlosenzuschlag), auch bei Gewinn 0. Deshalb ist die Liquidität eines leeren Plans negativ (−10.298,79 € nach 36 Monaten). Die Rechnung ist unverändert. Die App meldet das aber erst als Fehler, wenn Umsatz, Kosten und Finanzierung erfasst sind (siehe README, v1.3).
+* **„Erste Schätzung“** ist weniger streng als die Vorlage: Eine negative Liquidität ist dann nur ein Warnhinweis.
+

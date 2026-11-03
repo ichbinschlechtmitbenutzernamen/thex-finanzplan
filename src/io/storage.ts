@@ -27,6 +27,13 @@ export function migriere(raw: any): Plan {
   p.pruefung = { ...basis.pruefung, ...(raw.pruefung || {}) };
   if (!Array.isArray(p.darlehen) || p.darlehen.length === 0) p.darlehen = basis.darlehen;
   if (!Array.isArray(p.gruender) || p.gruender.length === 0) p.gruender = basis.gruender;
+  // v1.2 → v1.3: Planzweck. Ältere Dateien kannten nur das Mikrodarlehen → Mikrodarlehen voreinstellen + Hinweis
+  if (!raw.zweck || typeof raw.zweck !== 'object') {
+    p.zweck = { orientierung: false, gz: false, md: true };
+    p.meta.zweckErgaenzt = true;
+  } else {
+    p.zweck = { orientierung: !!raw.zweck.orientierung, gz: !!raw.zweck.gz, md: !!raw.zweck.md };
+  }
   p.schemaVersion = SCHEMA_VERSION;
   standErgaenzen(p);
   return p;

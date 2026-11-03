@@ -16,13 +16,13 @@ const tutorialWeg = async () => {
   const t = page.getByRole('dialog', { name: 'Einführung' });
   await t.waitFor();
   await page.keyboard.press('Escape').catch(() => {});
-  if (await t.isVisible()) { for (let i = 0; i < 4; i++) await page.getByRole('button', { name: 'Weiter' }).click(); await page.getByRole('button', { name: "Los geht's" }).click(); }
+  if (await t.isVisible()) { while (await page.getByRole('button', { name: 'Weiter' }).isVisible()) await page.getByRole('button', { name: 'Weiter' }).click(); await page.getByRole('button', { name: "Los geht's" }).click(); }
 };
 const gespeichert = () => page.evaluate(k => localStorage.getItem(k), KEY);
 
 await page.goto(URL);
 await tutorialWeg();
-check((await page.locator('footer.footer').innerText()).includes('1.2.0'), 'Version 1.2.0');
+check(/ThEx Finanzplan 1\.[2-9]\.\d/.test(await page.locator('footer.footer').innerText()), 'Versionsnummer im Footer');
 await page.getByRole('button', { name: 'Beispielprojekt laden' }).click();
 for (let i = 0; i < 12; i++) {
   const h = await page.locator('.step-head h2').innerText();
@@ -66,8 +66,10 @@ check((await page.locator('.topbar .proj').innerText()).startsWith('Neuer Plan')
 check((await page.locator('.step-head h2').innerText()) === 'Start & Einstellungen', 'zurück bei Schritt 0');
 const n = await page.locator('nav.sidebar li').count(), gesperrt = await page.locator('nav.sidebar li.locked').count();
 check(gesperrt === n - 1 && !(await page.locator('nav.sidebar li.done, nav.sidebar li.pruefen').count()), `alle Schritte außer Start gesperrt (${gesperrt}/${n}), keine Häkchen/Markierungen`);
-check((await page.getByTestId('side-kd').innerText()).trim() === '–', 'KD-Ampel leer');
-check(await page.getByRole('button', { name: 'PDF für TAB' }).isDisabled(), 'PDF gesperrt');
+// v1.3: nach dem Reset ist kein Planzweck gewählt → keine KD-Ampel, PDF-Knopf neutral und gesperrt
+check(!(await page.getByTestId('side-kd').count()), 'KD-Ampel ausgeblendet (kein Planzweck gewählt)');
+check((await page.getByTestId('side-zweck').innerText()).includes('noch nicht gewählt'), 'Planzweck zurückgesetzt');
+check(await page.getByRole('button', { name: 'PDF erstellen' }).isDisabled(), 'PDF gesperrt');
 // Neustart der Seite: weiterhin leer; Re-Import der Sicherung stellt den Plan wieder her
 await page.reload(); await page.locator('.topbar .proj').waitFor();
 check((await page.locator('.topbar .proj').innerText()).startsWith('Neuer Plan'), 'nach Neuladen weiterhin leer');

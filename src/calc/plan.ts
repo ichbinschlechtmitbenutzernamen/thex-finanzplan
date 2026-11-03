@@ -1,5 +1,6 @@
 import type { Plan, Gruender } from '../model/types';
 import { darlehenReihen, type Tilgungszeile } from './loans';
+import { mdAktiv, gzAktiv, nurSchaetzung } from '../model/zweck';
 import { gewerbesteuer, estPersonen, estGf, kapGSteuern, type EStErgebnis } from './tax';
 
 export const M = 36;
@@ -53,6 +54,9 @@ export function berechne(plan: Plan) {
   const kapg = rf === 'KAPG';
   const ust = (s: number) => (ku ? 0 : s);
   const labels = monatsLabels(plan.projekt.gruendungsmonat);
+  // Planzweck (v1.3): ohne Mikrodarlehen zählt Darlehen 1 (Mikrodarlehen) nicht – Daten bleiben im Plan erhalten
+  const mdZweck = mdAktiv(plan), gzZweck = gzAktiv(plan), schaetzung = nurSchaetzung(plan);
+  const darlehenEff = plan.darlehen.map((d, i) => (i === 0 && !mdZweck ? { ...d, betrag: 0 } : d));
 
   // 5.1 Umsatz / 5.2 Material
   const g3 = plan.umsatz.wachstumJ3;
@@ -123,7 +127,7 @@ export function berechne(plan: Plan) {
   const zuschuesse = zeitraum(plan.kosten.zuschuesse), aoErtrag = zeitraum(plan.kosten.aoErtrag), aoAufwand = zeitraum(plan.kosten.aoAufwand);
 
   // 5.6 Darlehen
-  const darlehen = plan.darlehen.map((d, i) => ({ d, i, ...darlehenReihen(d) }));
+  const darlehen = darlehenEff.map((d, i) => ({ d, i, ...darlehenReihen(d) }));
   const zinsen = darlehen.reduce((a, x) => add(a, x.zins), zeros());
   const tilgung = darlehen.reduce((a, x) => add(a, x.tilgung), zeros());
   const darlehenZufluss = darlehen.reduce((a, x) => add(a, x.auszahlung), zeros());
@@ -240,13 +244,18 @@ export function berechne(plan: Plan) {
   if (sum(umsatz, 0, 12) <= 0) warnungen.push({ schritt: 'umsatz', text: 'Umsatz im Plan-Jahr 1 ist 0 €.' });
   plan.umsatz.felder.forEach(f => { if (f.materialQuote > 0.8) warnungen.push({ schritt: 'umsatz', text: `${f.name}: Materialquote über 80 %.` }); });
   const negMonate = kumuliert.map((x, i) => (x < -0.005 ? i : -1)).filter(i => i >= 0);
-  const liqFehler = liquiditaetsFehlerText(negMonate, kumuliert, labels, tiefpunktIdx);
-  if (liqFehler) warnungen.push({ schritt: 'liquiditaet', text: liqFehler, schwer: true, fehler: true });
-  const md = plan.darlehen[0];
+  // v1.3: Liquiditätsfehler erst zeigen, wenn er aussagekräftig ist (siehe liqFehlerRelevant)
+  const er = plan.meta?.erledigt ?? {};
+  const kostenErfasst = sum(kosten, 0, 12) + sum(personal, 0, 12) + sum(material, 0, 12) + sum(einmal, 0, 12) + sum(investBrutto) > 0;
+  const finanzErfasst = darlehenEff.some(d => !d.bestehend && d.betrag > 0) || plan.eigenmittel.bar + plan.eigenmittel.privatdarlehen + plan.eigenmittel.sachzuschuss + plan.eigenmittel.sacheinlage > 0;
+  const fehlerRelevant = liqFehlerRelevant({ erledigt: er, bestaetigt: !!plan.meta?.bestaetigtAm, umsatz: sum(umsatz, 0, 12) > 0, kosten: kostenErfasst, finanzierung: finanzErfasst });
+  const liqFehler = liquiditaetsFehlerText(negMonate, kumuliert, labels, tiefpunktIdx, schaetzung);
+  if (liqFehler && fehlerRelevant) warnungen.push(schaetzung ? { schritt: 'liquiditaet', text: liqFehler, schwer: true } : { schritt: 'liquiditaet', text: liqFehler, schwer: true, fehler: true });
+  const md = mdZweck ? plan.darlehen[0] : undefined;
   if (md && md.betrag > 0 && (md.betrag < 5000 || md.betrag > 35000) && !plan.einstellungen.folgedarlehen) warnungen.push({ schritt: 'darlehen', text: 'Mikrodarlehen: zulässig sind 5.000 € bis 35.000 €.' });
   if (md && plan.einstellungen.folgedarlehen && md.betrag > 45000) warnungen.push({ schritt: 'darlehen', text: 'Mikrodarlehen inkl. Folgedarlehen: max. 45.000 € gesamt.' });
   if (md && (md.laufzeit > 84 || md.tilgungsfrei > 12)) warnungen.push({ schritt: 'darlehen', text: 'Mikrodarlehen: max. 84 Monate Laufzeit, max. 12 Monate tilgungsfrei.' });
-  if (ampel === 'rot') warnungen.push({ schritt: 'ergebnis', text: grenze <= 0 ? 'KD-Grenze ist nicht positiv – Kapitaldienstfähigkeit nicht gegeben.' : `KD-Auslastung ${(auslastung * 100).toFixed(1)} % liegt über ${(p.kdGrenze * 100).toFixed(0)} %.`, schwer: true });
+  if (mdZweck && ampel === 'rot') warnungen.push({ schritt: 'ergebnis', text: grenze <= 0 ? 'KD-Grenze ist nicht positiv – Kapitaldienstfähigkeit nicht gegeben.' : `KD-Auslastung ${(auslastung * 100).toFixed(1)} % liegt über ${(p.kdGrenze * 100).toFixed(0)} %.`, schwer: true });
   if (rf === 'GBR' && Math.abs(anteilSumme - 100) > 0.01) warnungen.push({ schritt: 'projekt', text: `Gewinnanteile der Gesellschafter ergeben ${anteilSumme} % statt 100 %.` });
   gruender.forEach(g => { const k = privatKostenMonat(g, 0); if (k > 0 && k < 1000 && !(g.einnahmen[0] > 0)) warnungen.push({ schritt: 'privat', text: `${g.name}: private Kosten unter 1.000 €/Monat ohne weitere Einnahmen – bitte prüfen.` }); });
   tragfaehigkeit.forEach(t => { if (t.netto < t.bedarf) warnungen.push({ schritt: 'ergebnis', text: `${t.name}: Netto-GF-Gehalt + Ausschüttung (${Math.round(t.netto)} €) decken private Kosten Jahr 2 (${Math.round(t.bedarf)} €) nicht.` }); });
@@ -289,13 +298,16 @@ export function berechne(plan: Plan) {
   plan.invest.forEach(x => { if (x.bez && !(x.netto > 0)) pl('invest', `Investition „${x.bez}“ ohne Betrag.`); if (!x.gwg && x.ndJahre > 0 && x.ndJahre < 1) pl('invest', `Investition „${x.bez || '–'}“: Nutzungsdauer unter 1 Jahr.`); });
   // Finanzierung
   const kbSumme = plan.invest.reduce((s2, x) => s2 + x.netto, 0) + [...plan.betriebskosten, ...plan.gruendungskosten].reduce((s2, x) => s2 + x.netto, 0);
-  const finSumme = plan.darlehen.filter(d => !d.bestehend).reduce((s2, d) => s2 + d.betrag, 0) + em.bar + em.privatdarlehen + em.sachzuschuss + em.sacheinlage;
+  const finSumme = darlehenEff.filter(d => !d.bestehend).reduce((s2, d) => s2 + d.betrag, 0) + em.bar + em.privatdarlehen + em.sachzuschuss + em.sacheinlage;
   if (kbSumme > 0 && finSumme < kbSumme - 0.5) pl('darlehen', `Finanzierungslücke: Kapitalbedarf ${eur(kbSumme)}, Finanzierung ${eur(finSumme)} (fehlen ${eur(kbSumme - finSumme)}).`, true);
-  plan.darlehen.forEach((d, i) => { if (d.betrag > 0 && (d.sollzins <= 0 || d.sollzins > PLAUSI.zinsMax)) pl('darlehen', `Darlehen ${i + 1}: Sollzins ${(d.sollzins * 100).toFixed(2).replace('.', ',')} % ist unplausibel.`); });
+  darlehenEff.forEach((d, i) => { if (d.betrag > 0 && (d.sollzins <= 0 || d.sollzins > PLAUSI.zinsMax)) pl('darlehen', `Darlehen ${i + 1}: Sollzins ${(d.sollzins * 100).toFixed(2).replace('.', ',')} % ist unplausibel.`); });
   // Steuer-Parameter
   if (rf !== 'FREI' && (p.hebesatz < PLAUSI.hebesatzMin || p.hebesatz > PLAUSI.hebesatzMax)) pl('steuern', `Gewerbesteuer-Hebesatz ${Math.round(p.hebesatz * 100)} % ist unplausibel (gesetzliches Minimum 200 %).`);
   // KD gelb
-  if (ampel === 'gelb') pl('ergebnis', `KD-Auslastung ${(auslastung * 100).toFixed(1).replace('.', ',')} % liegt in der gelben Zone (über ${(p.kdGelb * 100).toFixed(0)} %) – wenig Reserve für Planabweichungen.`);
+  if (mdZweck && ampel === 'gelb') pl('ergebnis', `KD-Auslastung ${(auslastung * 100).toFixed(1).replace('.', ',')} % liegt in der gelben Zone (über ${(p.kdGelb * 100).toFixed(0)} %) – wenig Reserve für Planabweichungen.`);
+
+  // Gründungszuschuss gewählt, aber nicht eingetragen
+  if (gzZweck && er.privat && !kapg && gruender.every(g => !(g.gzBetrag > 0))) pl('privat', 'Planzweck Gründungszuschuss: Es ist noch kein Gründungszuschuss eingetragen. Tragen Sie den erwarteten Zuschuss als private Einnahme ein (Phase 1: i. d. R. 6 Monate in Höhe des Arbeitslosengeldes zzgl. 300 €), sobald die Höhe bekannt ist.');
 
   const jahre = [1, 2, 3].map(j => ({
     umsatz: jahr(umsatz, j), zuschuesse: jahr(zuschuesse, j), betriebsertrag: jahr(betriebsertrag, j), material: jahr(material, j), personal: jahr(personal, j), afa: jahr(afa, j),
@@ -308,14 +320,15 @@ export function berechne(plan: Plan) {
     invest: plan.invest.reduce((s, x) => s + x.netto, 0), betriebskosten: plan.betriebskosten.reduce((s, x) => s + x.netto, 0), gruendungskosten: plan.gruendungskosten.reduce((s, x) => s + x.netto, 0),
     ustSumme: plan.invest.reduce((s, x) => s + x.netto * x.ust, 0) + [...plan.betriebskosten, ...plan.gruendungskosten].reduce((s, x) => s + x.netto * x.ust, 0),
   };
-  const finanzierung = plan.darlehen.filter(d => !d.bestehend).reduce((s, d) => s + d.betrag, 0) + em.bar + em.privatdarlehen + em.sachzuschuss + em.sacheinlage;
+  const finanzierung = darlehenEff.filter(d => !d.bestehend).reduce((s, d) => s + d.betrag, 0) + em.bar + em.privatdarlehen + em.sachzuschuss + em.sacheinlage;
 
   return {
     labels, umsatzGF, umsatz, umsatzBrutto, ustUmsatz, material, personal, afa, einmal, kosten, zinsen, tilgung, zuschuesse, aoErtrag, aoAufwand,
     betriebsertrag, aufwand, betriebsergebnis, ergebnisVorSteuern, jahre, steuerJahre,
     ust: { ust: ustUmsatz, vst, zahllast, zahlung: ustZahlung },
-    liq: { einz, ausz, summeEin, summeAus, saldo, kumuliert, kumuliertOhneGZ, tiefpunktIdx, tiefpunkt: kumuliert[tiefpunktIdx], negMonate },
+    liq: { einz, ausz, summeEin, summeAus, saldo, kumuliert, kumuliertOhneGZ, tiefpunktIdx, tiefpunkt: kumuliert[tiefpunktIdx], negMonate, fehlerRelevant },
     privat, privatentnahme, darlehen: darlehen.map(x => ({ d: x.d, plan: x.plan as Tilgungszeile[] })), kd, warnungen,
+    zweck: { md: mdZweck, gz: gzZweck, schaetzung },
     kapitalbedarf: { ...kapitalbedarf, summe: kapitalbedarf.invest + kapitalbedarf.betriebskosten + kapitalbedarf.gruendungskosten }, finanzierung,
   };
 }
@@ -394,11 +407,27 @@ export function sollIstZeilen(e: Ergebnis): [string, string, number[]][] {
 }
 
 
-/** Fehlertext bei negativer Liquidität (null, wenn alle 36 Monate ≥ 0 €) */
-export function liquiditaetsFehlerText(negMonate: number[], kumuliert: number[], labels: string[], tiefpunktIdx: number): string | null {
+/** Fehlertext bei negativer Liquidität (null, wenn alle 36 Monate ≥ 0 €); schaetzung = nur Hinweis (erste Schätzung) */
+export function liquiditaetsFehlerText(negMonate: number[], kumuliert: number[], labels: string[], tiefpunktIdx: number, schaetzung = false): string | null {
   if (!negMonate.length) return null;
   const tief = `${Math.round(kumuliert[tiefpunktIdx]).toLocaleString('de-DE')} €`;
-  return `Liquidität negativ in ${negMonate.length} von 36 Monaten (erster: ${labels[negMonate[0]]}, Tiefpunkt ${tief} im ${labels[tiefpunktIdx]}). Ein Plan mit negativer Liquidität ist nicht einreichungsfähig – bitte Finanzierung, Eigenmittel, Kosten, Entnahmen oder Zeitpunkte anpassen.`;
+  const kopf = `Liquidität negativ in ${negMonate.length} von 36 Monaten (erster: ${labels[negMonate[0]]}, Tiefpunkt ${tief} im ${labels[tiefpunktIdx]}).`;
+  if (schaetzung) return `${kopf} Für eine erste Schätzung ist das ein Warnhinweis – für einen Antrag (Gründungszuschuss, Mikrodarlehen) wäre der Plan so nicht einreichungsfähig. Bitte Finanzierung, Eigenmittel, Kosten, Entnahmen oder Zeitpunkte prüfen.`;
+  return `${kopf} Ein Plan mit negativer Liquidität ist nicht einreichungsfähig – bitte Finanzierung, Eigenmittel, Kosten, Entnahmen oder Zeitpunkte anpassen.`;
+}
+
+/**
+ * v1.3: Ab wann ist ein Liquiditätsfehler aussagekräftig und wird außerhalb des Schritts Liquidität angezeigt
+ * (Seitenleiste, Ergebnis/KD, Dashboard, PDF, Excel)?
+ * – sobald der Schritt Liquidität erreicht ist (Finanzierung & Darlehen abgeschlossen) oder ein späterer Schritt / das Ergebnis bestätigt ist, oder
+ * – sinnvoll vorher: Umsatz Jahr 1 und Kosten sind erfasst und zusätzlich ist die Kostenplanung abgeschlossen oder eine Finanzierung eingetragen.
+ * Vorher würde ein leerer Plan allein durch den KV-Mindestbeitrag „negativ“ (−10.299 € in 36 Monaten).
+ * Im Schritt Liquidität selbst und beim Bestätigen des Ergebnisses blockiert negative Liquidität immer (siehe fehler('liquiditaet')).
+ */
+export function liqFehlerRelevant(x: { erledigt: Record<string, boolean>; bestaetigt: boolean; umsatz: boolean; kosten: boolean; finanzierung: boolean }): boolean {
+  const er = x.erledigt;
+  if (er.darlehen || er.liquiditaet || er.steuern || x.bestaetigt) return true;
+  return x.umsatz && x.kosten && (!!er.kosten || x.finanzierung);
 }
 /** Fehler (blockierend) aus einem Ergebnis */
 export const planFehler = (e: { warnungen: Warnung[] }) => e.warnungen.filter(w => w.fehler);

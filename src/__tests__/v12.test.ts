@@ -29,7 +29,7 @@ function musterFertig() {
 const inhalt = (p: any) => JSON.parse(JSON.stringify(p, (k, v) => (k === 'id' || k === 'erstellt' || k === 'geaendert' ? undefined : v)));
 
 describe('Reset (v1.2)', () => {
-  it('Version 1.2.0', () => expect(APP_VERSION).toBe('1.2.0'));
+  it('Version ist gesetzt (aktuell 1.3.x)', () => expect(APP_VERSION).toMatch(/^1\.3\.\d+$/));
   it('Reset nach „Muster Werkstatt“: alle Felder leer, Schritte gesperrt, keine Markierungen, nicht bestätigt', () => {
     const muster = musterFertig();
     speichern(muster);

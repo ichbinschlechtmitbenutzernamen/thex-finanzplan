@@ -1,6 +1,7 @@
 import type { Gruender, Params, Plan, PrivatPosten, KostenPosten, Geschaeftsfeld, Darlehen } from './types';
 
-export const SCHEMA_VERSION = 1;
+/** 2 = v1.3 (Planzweck) */
+export const SCHEMA_VERSION = 2;
 export const uid = () => Math.random().toString(36).slice(2, 10);
 export const z = (n: number) => Array.from({ length: n }, () => 0);
 
@@ -79,6 +80,7 @@ function naechsterMonat(): string {
 export function leererPlan(): Plan {
   return {
     schemaVersion: SCHEMA_VERSION,
+    zweck: { orientierung: false, gz: false, md: false },
     meta: { tutorialGesehen: false, haftungBestaetigt: false, erledigt: {}, pruefer: false, geaendert: new Date().toISOString(), stand: {}, bestaetigtAm: '' },
     einstellungen: { rechtsform: 'EU', kleinunternehmer: false, folgedarlehen: false, mehrgruender: false },
     projekt: { name: '', vorhaben: '', anschrift: '', telefon: '', email: '', branche: '', gemeinde: '', gruendungsmonat: naechsterMonat() },

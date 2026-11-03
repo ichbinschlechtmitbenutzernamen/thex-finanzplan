@@ -84,14 +84,27 @@ export interface Stundensatz {
   stundenFelder: string[];
 }
 
+/** Planzweck (v1.3): wofür der Finanzplan erstellt wird – Mehrfachauswahl, mindestens einer */
+export interface Zweck {
+  /** erste Schätzung / eigene Orientierung */
+  orientierung: boolean;
+  /** Gründungszuschuss der Agentur für Arbeit (Tragfähigkeit durch fachkundige Stelle) */
+  gz: boolean;
+  /** Thüringer Mikrodarlehen (TAB): KD-Prüfung, Darlehensplan, Kontoauszugsanalyse */
+  md: boolean;
+}
+
 export interface Plan {
   schemaVersion: number;
+  zweck: Zweck;
   meta: {
     tutorialGesehen: boolean; haftungBestaetigt: boolean; erledigt: Record<string, boolean>; pruefer: boolean; geaendert: string;
     /** „Bitte prüfen“: je abgeschlossenem Schritt die Fingerabdrücke der vorgelagerten Eingaben zum Zeitpunkt der Bestätigung */
     stand: Record<string, Record<string, string>>;
     /** Zeitpunkt der letzten Bestätigung des Ergebnisses (ISO) */
     bestaetigtAm: string;
+    /** Planzweck wurde beim Laden einer älteren Datei (v1.0–v1.2) automatisch ergänzt (Mikrodarlehen) */
+    zweckErgaenzt?: boolean;
   };
   einstellungen: { rechtsform: Rechtsform; kleinunternehmer: boolean; folgedarlehen: boolean; mehrgruender: boolean };
   projekt: { name: string; vorhaben: string; anschrift: string; telefon: string; email: string; branche: string; gemeinde: string; gruendungsmonat: string /* YYYY-MM */ };

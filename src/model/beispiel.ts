@@ -4,6 +4,7 @@ import { leererPlan, neuesFeld, uid } from './defaults';
 /** Beispielplan „Muster Werkstatt“ – für Tutorial-Demo, Tests und Screenshots */
 export function beispielPlan(): Plan {
   const p = leererPlan();
+  p.zweck = { orientierung: false, gz: false, md: true };
   p.projekt = { ...p.projekt, name: 'Muster Werkstatt', vorhaben: 'Fahrradwerkstatt mit Ersatzteilverkauf', anschrift: 'Musterstraße 1, 07743 Jena', branche: 'Handwerk / Handel', gemeinde: 'Jena', gruendungsmonat: '2027-01' };
   const g = p.gruender[0];
   g.name = 'Max Muster';

@@ -14,7 +14,7 @@ await page.goto(URL);
 await page.getByRole('dialog', { name: 'Einführung' }).waitFor();
 await page.screenshot({ path: `${OUT}/01_tutorial.png` });
 log('Tutorial sichtbar');
-for (let i = 0; i < 4; i++) await page.getByRole('button', { name: 'Weiter' }).click();
+while (await page.getByRole('button', { name: 'Weiter' }).isVisible()) await page.getByRole('button', { name: 'Weiter' }).click();
 await page.getByRole('button', { name: "Los geht's" }).click();
 // gesperrter Schritt prüfen
 await page.locator('nav.sidebar button', { hasText: 'Umsatzplanung' }).click();
